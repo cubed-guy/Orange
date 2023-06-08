@@ -1,0 +1,304 @@
+// A strongly typed language with polymorphism ie templates ie generics
+// This is a file demostrating the things that the compiler is capable of rn
+
+// 'type' is just a fancier word for 'struct'
+type Int_node
+	let data int
+	let next &Int_node
+end
+
+// Polymorphic structs don't work yet... or do they?
+type Node T
+	let data T
+	let next &Node T
+end
+
+// A polymorphic function that returns the argument
+# new_thing T: T x -> T
+return x
+
+// Won't work. variables of type 'any' cannot exist. '&any' variables can
+// # any_cast A: A a -> any
+// // println(b)
+// return a
+
+# test_ret -> int  // syntax especially useful if not a pure function
+return 9
+
+# basics
+
+let a char
+a = 23
+
+let x int
+x = 23
+
+println(x)
+
+x = test_ret()
+println(x)
+
+y = a
+
+z = new_thing(5)
+
+c = 5
+c = new_thing(y)
+c = new_thing('\0')
+
+// Declarations can be anywhere in the function.
+// All of them have full function scope
+let y char
+
+let z int
+
+y = '9'
+
+z = new_thing(88)
+
+println(z)
+
+println(z)
+println(z)
+
+println(88)
+println(z)
+
+let c char
+
+# operations
+println(1+1)
+
+puts("Hello, World!" + 3)
+puts(3 + "Hello, World!")
+
+# control_flow
+let x int
+x = 23
+
+while x
+	x = x - 1
+	println(23-x)
+end
+
+x = 0
+
+println(x)
+
+while x < 25
+	x = x + 1
+
+	if x <= 15
+		puts("**")
+
+		let j char
+		j = 0
+		while j < 50
+			print(1)
+			j = j + 1
+		end
+		puts("")
+
+	elif x >= 20
+
+		print(x)
+		puts(" BIGGER THAN 20")
+
+	else
+
+		j = 0
+		while j < 3
+			print(0)
+			j = j + 1
+		end
+
+	end
+
+	println(x)
+end
+
+
+x = 0
+if x == 0
+	puts("ZERO")
+elif x == 1
+	puts("ONE")
+elif x == 2
+	puts("TWO")
+else
+	puts("THREE")
+end
+
+x = 1
+if x == 0
+	puts("ZERO")
+elif x == 1
+	puts("ONE")
+elif x == 2
+	puts("TWO")
+else
+	puts("THREE")
+end
+
+x = 2
+if x == 0
+	puts("ZERO")
+elif x == 1
+	puts("ONE")
+elif x == 2
+	puts("TWO")
+else
+	puts("THREE")
+end
+
+x = 3
+
+if x == 0
+	puts("ZERO")
+elif x == 1
+	puts("ONE")
+elif x == 2
+	puts("TWO")
+else
+	puts("THREE")
+end
+
+
+# dereffer T: &T x -> T
+return *x
+
+# pointers
+let x int
+x = 4
+
+let p &int
+
+p = &x
+
+println(*p)
+
+let g int
+
+x = 91
+g = dereffer(p)
+
+println(g)
+println(*p)
+
+x = 92
+g = dereffer(p)
+
+println(g)
+println(*p)
+
+
+# alloc_stuff
+
+let p &int
+
+p = alloc(int, 10)  // allocates 10 integers, returns &int based on first arg
+
+*p = 90
+
+println(*p)
+
+free(p)
+
+p = alloc(int)
+
+*p = 16777216
+
+println(*p)
+
+free(p)
+
+
+# linked_lists
+
+let head &Int_node
+let tail &Int_node
+
+tail = alloc(Int_node)
+tail.data = 5
+tail.next = 0  // unspecified type can go anywhere rn, maybe I should add Null?
+
+println(tail.data)
+
+head = tail
+
+tail.next = alloc(Int_node)
+tail = tail.next
+tail.data = 4
+tail.next = 0
+
+printaddr(head)
+printaddr(head.next)
+printaddr(tail)
+
+let i int
+i = 0
+while i < 10
+	tail.next = alloc(Int_node)
+	tail = tail.next
+	tail.data = i
+	i = i + 1
+end
+tail.next = 0
+
+let node &Int_node
+node = head
+while node
+	println(node.data)
+	node = node.next
+end
+
+node = head
+while node
+	head = node.next
+	printstr("Deleting ")
+	printaddr(node)
+	free(node)
+	node = head
+end
+
+# polymorphic_structs
+
+let head &Node int
+let tail &Node char
+
+head = alloc(Node int)  // alloc needs to parse type
+head.data = 4544
+
+tail = alloc(Node char)
+tail.data = 89
+
+let s &char
+s = alloc(char, 2)
+*s = tail.data
+
+let s2 &char
+s2 = s + 1
+
+*s2 = 0
+
+puts(s + 0)
+
+println(head.data)
+
+let x int
+x = this_thing(head)
+
+x = this_thing(tail)
+
+# this_thing A: A int a -> int
+return a.data
+
+# main
+
+basics()
+operations()
+control_flow()
+pointers()
+alloc_stuff()
+linked_lists()
+polymorphic_structs()
