@@ -12,24 +12,62 @@ type Node T
 	let data T
 	let next &Node T
 
-	fn nth: &Node T node, int n -> &Node T
+	fn nth: &Node T node, int n -> T
 		while n
 			node = node.next
 			n = n-1
 		end
-		return node
+		return node.data
 	end
 end
 
-	// A polymorphic function that returns the argument
+type Tree T
+	let data T
+	let left &Tree T
+	let right &Tree T
+
+	// 0; 1, 2; 3 4, 5 6; 7 8 9 10, 11 12 13 14
+
+	fn nth: &Tree T node, int n -> T
+		let depth int
+		depth = 0
+		let n2 int
+		n2 = n-1
+		while n2 > 0
+			depth = depth + 1
+			n2 = n2 >> 1
+		end
+
+		n2 = 1<<depth
+		n2 = n2>>1
+		n = n-1
+
+		println(n+1)
+		println(depth)
+		while n2
+			if n & n2
+				node = node.right
+				puts("RIGHT")
+			else
+				node = node.left
+				puts("LEFT")
+			end
+			n2 = n2 >> 1
+		end
+
+		return node.data
+	end
+end
+
+// A polymorphic function that returns the argument
 fn new_thing T: T x -> T
 	return x
 end
 
-	// Won't work. variables of type 'any' cannot exist. '&any' variables can
-	// # any_cast A: A a -> any
-	// // println(b)
-	// return a
+// Won't work. variables of type 'any' cannot exist. '&any' variables can
+// # any_cast A: A a -> any
+// // println(b)
+// return a
 
 fn test_ret -> int  // syntax especially useful if not a pure function
 	return 9
@@ -361,8 +399,31 @@ fn classmethods
 	node.next = alloc(Node int)
 	node = 0
 
-	node = Node int.nth(head, 2)
-	println(node.data)
+	let a int
+	a = Node int.nth(head, 2)
+	println(a)
+
+
+	// with trees too
+
+	let root &Tree int
+	root = alloc(Tree int)
+	root.left = alloc(Tree int)
+	root.right = alloc(Tree int)
+	let right &Tree int
+	right = root.right
+	right.data = 60
+
+	puts("calling get_nth()")
+	let x int
+	x = get_nth(root, 2)
+	println(x)
+	x = get_nth(head, 2)
+	println(x)
+end
+
+fn get_nth T: T iter, int n -> int
+	return T.nth(iter, n) // it'll error here if {T} not of form {A int}
 end
 
 fn main

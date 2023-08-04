@@ -7,8 +7,9 @@
 # DONE: pointer assignment
 # DONE: user-defined types
 # DONE: type pattern matching
-# TODO: classmethods
+# DONE: classmethods
 # TODO: array deref syntax
+# TODO: array assignment syntax
 # TODO: a (better) way to cast variables
 # TODO: arrays
 # TODO: constants
@@ -492,6 +493,8 @@ def parse_type(type_str, types) -> Optional[list[Type]]:
 	args = parse_type(match[2].lstrip(), types)
 	if args is None: return None
 
+	if T.args is None:
+		return [T, *args]
 	args_len = len(T.args)
 
 	instance = T.get_instance(tuple(args[:args_len]))
@@ -533,7 +536,7 @@ def parse_token(token: 'stripped', *, variables) \
 	insts = []
 	r_operand = None
 
-	for operator in ('<=', '>=', '==', '!=', *'<>+-*/%&^|'):  # big ones first
+	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>+-*/%&^|'):  # big ones first
 		operator_idx = Patterns.find_through_strings(token, operator)
 		if operator_idx != -1:
 			l_operand = token[:operator_idx].strip()
@@ -796,9 +799,13 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 			elif T is types['str']:
 				# TODO: account for null strings
 				return Flag.ALWAYS
-			else:
+			elif exp_clause is not None:
 				# works only if exp_clause can be a dest
 				output(f'test {exp_clause}, -1')
+				return Flag.nz
+			else:
+				output(f'test {{0:{T.size}}}, {{0:{T.size}}}'
+					.format(Register.a))
 				return Flag.nz
 
 	print('Parse exp', repr(exp))
@@ -887,10 +894,12 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 	if dot:
 		type_list = parse_type(caller_type_name, fn_types)
 		if type_list is None:
-			err(f'{caller_type_name!r} is not available')
+			err(f'Type {caller_type_name!r} is not available')
 		if len(type_list) != 1:
 			err('Method calls expect exactly one type')
 		caller_type, = type_list
+		if caller_type.deref is not None:
+			caller_type = caller_type.deref
 		if fn_name not in caller_type.methods:
 			err(f'{caller_type} has no method named {fn_name!r}')
 		fn_header = caller_type.methods[fn_name]
@@ -978,6 +987,18 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator == '>=': inst = 'cmp'
 	elif operator == '==': inst = 'cmp'
 	elif operator == '!=': inst = 'cmp'
+	elif operator == '<<':
+		size = Type.get_size(operand_type)
+		return [
+			f'mov {Register.c:{size}}, {operand_clause}',
+			f'shl {{dest_reg:{size}}}, cl',
+		]
+	elif operator == '>>':
+		size = Type.get_size(operand_type)
+		return [
+			f'mov {Register.c:{size}}, {operand_clause}',
+			f'shr {{dest_reg:{size}}}, cl',
+		]
 	elif operator == '*':
 		size = Type.get_size(operand_type)
 		return [
@@ -1133,7 +1154,7 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 			if name in curr_type.methods:
 				err(f'Function {name!r} already defined.')
 
-			fn = Function_header(name,
+			fn = Function_header(f'{curr_type.name}.{name}',
 				(*typeargs, *curr_type.args),  # curr_type.args may have Type objects?
 				tuple(arg.rsplit(maxsplit=1) for arg in args),
 				ret_type, tell, Shared.line_no
