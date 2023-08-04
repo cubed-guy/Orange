@@ -285,13 +285,47 @@ puts(s + 0)
 
 println(head.data)
 
-let x int
-x = this_thing(head)
+// let x int
+// x = this_thing(head)
 
-x = this_thing(tail)
+// x = this_thing(tail)
 
-# this_thing A: A int a -> int
-return a.data
+let node &Node int
+
+node = head
+head = alloc(Node int)
+head.next = node
+head.data = 55
+
+node = head
+head = alloc(Node int)
+head.next = node
+head.data = 77
+
+node = head
+head = alloc(Node int)
+head.next = node
+head.data = 99
+
+puts("Node data")
+node = Node_nth(head, 3)
+println(node.data)
+node = Node_nth(head, 2)
+println(node.data)
+node = Node_nth(head, 1)
+println(node.data)
+node = Node_nth(head, 0)
+println(node.data)
+
+// # this_thing A: A int a -> int
+// return a.data
+
+# Node_nth T: &Node T node, int n -> &Node T
+while n
+	node = node.next
+	n = n - 1
+end
+return node
 
 # main
 

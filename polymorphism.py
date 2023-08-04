@@ -6,9 +6,11 @@
 # DONE: return type checking
 # DONE: pointer assignment
 # DONE: user-defined types
+# DONE: type pattern matching
+# TODO: classmethods
+# TODO: array deref syntax
 # TODO: a (better) way to cast variables
 # TODO: arrays
-# TODO: array deref syntax
 # TODO: constants
 # TODO: check non-void return
 
@@ -192,14 +194,16 @@ class Function_header:
 				err(f'Invalid syntax {" ".join(arg_entry)!r}. '
 					'Expected exactly 2 words for arg entry.')
 
-	def add_sub(self, typeargs: tuple[str]) -> 'Function_instance':
+	def add_sub(self, key: tuple[str], typeargs = ()) -> 'Function_instance':
 		# Need to initialise arguments as variables
-		if len(typeargs) != len(self.typeargs):
+		if len(key) != len(self.typeargs):
 			err(f'Expected {len(self.typeargs)} type arguments '
-				f'to {self.name!r}. Got {len(typeargs)}')
+				f'to {self.name!r}. Got {len(key)}')
 
-		fn_instance = Function_instance(self, typeargs, len(self.instances))
-		self.instances[typeargs] = fn_instance
+		fn_instance = Function_instance(
+			self, typeargs, len(self.instances)
+		)
+		self.instances[key] = fn_instance
 		return fn_instance
 
 class Function_instance:
@@ -210,24 +214,20 @@ class Function_instance:
 		self.variables = {}
 		self.offset = 0
 
-	def init_args(self, types):
+	def init_args_vars(self, types):
+		local_types = types | self.type_mappings
 		for typename, argname in self.template.args:
 			if argname in self.variables:
 				err(f'Multiple instances of argument {argname!r} for function '
 					f'{self.template.name!r}')
 
-			if typename.startswith('&'):
-				ref = True
-				typename = typename[1:]
-			else:
-				ref = False
-
-			if typename in self.type_mappings:
-				typename = self.type_mappings[typename]
-			T = types[typename]
-
-			if ref:
-				T = T.pointer()
+			type_list = parse_type(typename, local_types)
+			if type_list is None:
+				# TODO: better message
+				err(f'Type {typename!r} is not available')
+			if len(type_list) != 1:
+				err('Type expression must evaluate to exactly one type')
+			T, = type_list
 
 			self.offset += T.size
 			self.variables[argname] = Variable(
@@ -262,6 +262,7 @@ class Type:
 		self.deref = None
 		self.ref = None
 		self.args = args
+		self.parent = self
 
 		self.instances = {}
 
@@ -296,7 +297,9 @@ class Type:
 			local_types = dict(zip(self.args, args))
 			instance_types = types | local_types
 
-			instance = Type(self.name, 0, {})
+			instance = Type(' '.join(T.name for T in [self, *args]), 0, {})
+			instance.args = args
+			instance.parent = self
 			self.instances[args] = instance
 
 		for name, field in self.fields.items():
@@ -308,12 +311,49 @@ class Type:
 				T, = type_list
 
 			print(f'Added field {name!r} of {T} to instance')
-			instance.fields[name] = Variable(name, instance.size, T, field.decl_line_no)
+			field = Variable(name, instance.size, T, field.decl_line_no)
+			instance.fields[name] = field
 			instance.size += T.size
 
 		print('INSTANCE OF SIZE', instance.size)
 		return instance
 
+	def match_pattern(self, type_str, types) -> dict['type_arg': 'Type']:
+		type_queue = [self]
+		out_mappings = {}
+		for token in type_str.split():
+
+			if not type_queue:
+				err(f'Could not match {token!r} from {type_str!r} '
+					f'to any type in {self}. '
+					'(Note: Type arguments cannot take parameters)')
+				# It could work if only the first token is a parameter
+
+			expected_type = type_queue.pop(0)
+			if token.startswith('&'):
+				if expected_type.deref is None:
+					err(f'{expected_type!r} does not have deref for {token!r}')
+				expected_type = expected_type.deref
+				token = token[1:]
+
+			if token not in types:
+				if token not in out_mappings:
+					out_mappings[token] = expected_type
+				elif out_mappings[token] is (UNSPECIFIED_TYPE, None):
+					out_mappings[token] = expected_type
+				elif expected_type is ANY_TYPE:
+					out_mappings[token] = expected_type
+				elif out_mappings[token] is not expected_type:
+					err('Multiple mappings to same argument. '
+						f'Trying to map {token!r} to '
+						f'{expected_type} and {out_mappings[token]}')
+			elif types[token] not in (ANY_TYPE, expected_type.parent):
+				err(f'{expected_type} did not match {token!r} in {type_str!r}')
+			else:
+				type_queue.extend(expected_type.args)
+			# TODO: append to type_queue
+
+		return out_mappings
 
 	def pointer(self):
 		if self.ref is not None: return self.ref
@@ -770,16 +810,16 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		fn_name = fn_name[1:].strip()
 	else:
 		fn_deref = False
+	arg_types = []
 
 	if fn_name == 'alloc':
 		alloc_type = None
 		alloc_fac  = None
 
-	argtypes = []
 	while idx != -1:
-		if len(argtypes) >= len(arg_regs):
+		if len(arg_types) >= len(arg_regs):
 			err('Only upto 4 arguments are allowed')
-		arg_reg = arg_regs[len(argtypes)]
+		arg_reg = arg_regs[len(arg_types)]
 
 		end = Patterns.find_through_strings(exp, ',', start=idx+1)
 		arg = exp[idx+1:end].strip()
@@ -833,79 +873,80 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 			dereffed_reg = arg_reg.encode(size=size)
 			output(f'mov {dereffed_reg}, {size_prefix(size)} [{reg_str}]')
 
-		argtypes.append(T)
+		arg_types.append(T)
 
-	if fn_name == 'alloc' and not argtypes:
-		argtypes.append(UNSPECIFIED_TYPE)
+	if fn_name == 'alloc' and not arg_types:
+		arg_types.append(UNSPECIFIED_TYPE)
 		output(f'mov {arg_reg:8}, {alloc_fac}')
 
 	if fn_name not in function_headers:
 		err(f'No function named {fn_name!r}')
-	fn = function_headers[fn_name]
-	# use fn.typeargs, fn.args
+	fn_header = function_headers[fn_name]
+	# use fn_header.typeargs, fn_header.args
 	# We could store {typename: Type}, but rn we have {typename: typename}
-	type_mappings = {T: None for T in fn.typeargs}
 
-	for i, ((fn_typename, arg_name), T) in enumerate(zip(fn.args, argtypes), 1):
-		if fn_typename.startswith('&'):
-			if T.deref is None: err(f'{T} does not match {fn_typename!r}')
+	# Populate type_mappings
+	type_mappings = {T: None for T in fn_header.typeargs}
+	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
+		if arg_type is not UNSPECIFIED_TYPE:
+			curr_mappings = arg_type.match_pattern(type_str, types)
+		elif parse_type(type_str, types) is None:
+			# don't update mappings
+			if len(type_str.split(maxsplit=1)) > 1: continue
+			# We have to expect UNSPECIFIED_TYPE in the for loop
+			curr_mappings = {type_str: UNSPECIFIED_TYPE}
+		else: continue  # parse_type is not None, so it won't change
 
-			ref = True
-			T = T.deref
-			fn_typename = fn_typename[1:]  # spaces not allowed?
-
-		if fn_typename not in type_mappings:
-			if types[fn_typename] is ANY_TYPE:
-				continue
-			if T not in (types[fn_typename], UNSPECIFIED_TYPE):
-				err(f'Expected type {fn_typename!r} for argument {i} '
-					f'{arg_name!r}. Got {T!r} instead')
-
-		elif type_mappings[fn_typename] in (None, UNSPECIFIED_TYPE):
-			if T is UNSPECIFIED_TYPE:
-				type_mappings[fn_typename] = T
-			else:
-				type_mappings[fn_typename] = T.name
-
-		elif type_mappings[fn_typename] != T.name:
-			err(f'Mismatch for type argument {fn_typename!r}: '
-				f'{type_mappings[fn_typename]!r} vs {T!r}')
-
-		else:
-			abort()
+		for type_arg, matched_type in curr_mappings.items():
+			if type_arg not in type_mappings:
+				err(f'{type_arg!r} in {type_str} is neither '
+					'an existing type nor a type argument')
+			elif type_mappings[type_arg] in (UNSPECIFIED_TYPE, None):
+				type_mappings[type_arg] = matched_type
+			elif matched_type is ANY_TYPE:
+				type_mappings[type_arg] = matched_type
+			elif type_mappings[type_arg] is not matched_type:
+				err('Multiple mappings to same argument. '
+					f'Trying to map {type_arg!r} to '
+					f'{matched_type} and {type_mappings[type_arg]}')
 
 	# Handles UNSPECIFIED_TYPE
 	for typename, subbed_type in type_mappings.items():
 		if subbed_type is UNSPECIFIED_TYPE:
-			type_mappings[typename] = 'int'
+			type_mappings[typename] = types['int']
 
-	subbed_types = tuple(type_mappings[typearg] for typearg in fn.typeargs)
+	instance_key = tuple(type_mappings[typearg].name for typearg in fn_header.typeargs)
 	try:
-		idx = subbed_types.index(None)
+		idx = instance_key.index(None)
 	except ValueError:
 		pass  # no problem
 	else:
-		err(f'Type argument {fn.typeargs[idx]!r} not mapped in {fn.name!r}')
+		err(f'Type argument {fn_header.typeargs[idx]!r} not mapped in {fn_header.name!r}')
 
 
-	if subbed_types in fn.instances:
-		fn_instance = fn.instances[subbed_types]
+	if instance_key in fn_header.instances:
+		fn_instance = fn_header.instances[instance_key]
 	else:
-		fn_queue.append((fn, subbed_types))
-		fn_instance = fn.add_sub(subbed_types)
-		fn_instance.init_args(types)
+		fn_queue.append((fn_header, instance_key))
+		fn_instance = fn_header.add_sub(
+			instance_key, (*type_mappings.values(),)
+		)
 
 	output('call', fn_instance.mangle())
 
 	if fn_name == 'alloc':
 		return alloc_type.pointer()
 
-	# print(f'{fn.ret_type = }')
+	# print(f'{fn_header.ret_type = }')
 
-	if fn.ret_type in type_mappings:
-		# print(f'Returning a mapped type ({fn.ret_type!r})')
-		return types[type_mappings[fn.ret_type]]
-	return types[fn.ret_type]
+	ret_type_list = parse_type(fn_header.ret_type, types | type_mappings)
+	if ret_type_list is None:
+		# TODO: better message
+		err(f'No such type {fn_header.ret_type}')
+	elif len(ret_type_list) != 1:
+		err('Return type string does not evaluate to a single type')
+	ret_type, = ret_type_list
+	return ret_type
 
 
 def get_operator_insts(operator, operand_clause, operand_type):
@@ -1002,7 +1043,6 @@ types = {
 	'void': Type('void', 0, {}),
 	'any': Type('any', None, {}),
 }
-tell = 0
 ANY_TYPE = types['any']
 
 # Builtins
@@ -1024,6 +1064,7 @@ arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
 in_function = False
 curr_type = None
 
+tell = 0
 for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 	tell += len(Shared.line) + crlf
 	match = Patterns.stmt.match(Shared.line)
@@ -1109,6 +1150,7 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 			name, (*typeargs,), tuple(arg.rsplit(maxsplit=1) for arg in args),
 			ret_type, tell, Shared.line_no
 		)
+		print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
 		function_headers[name] = fn
 
 		if name == 'main':  # not be confused with if __name__ == '__main__':
@@ -1122,22 +1164,18 @@ strings = {}
 ctrl_no = 0
 
 while fn_queue:
-	fn, subbed_types = fn_queue.pop(0)
-	fn_instance = fn.instances[subbed_types]
-	# fn_instance = fn.add_sub(subbed_types)
+	fn, instance_key = fn_queue.pop(0)
+	fn_instance = fn.instances[instance_key]
+	# fn_instance = fn.add_sub(instance_key)
 	# if fn_instance is None: continue
 
 	# 2 passes. allocate variable space first
 
-	local_types = {
-		type_name: types[T] for type_name, T in zip(fn.typeargs, subbed_types)
-	}
-	output(f'\n; {local_types}')
+	output(f'\n; {fn_instance.type_mappings}')
+	fn_types = types | fn_instance.type_mappings
 
-	fn_types = types | local_types
-
+	fn_instance.init_args_vars(types)
 	offset = fn_instance.offset
-
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1199,7 +1237,7 @@ while fn_queue:
 	output(f'mov rbp, rsp')  # 32 extra bytes are always required
 
 	# align and push only if there are function calls
-	offset = ((offset+1) | 15) + 33  # round up to multiple of 15 + 32
+	offset = ((offset+1) | 15) + 33  # (round up to multiple of 15) + 32
 	output(f'sub rsp, {offset}')
 	output('push rbp')
 
@@ -1217,7 +1255,7 @@ while fn_queue:
 
 	ctrl_stack = []
 
-	print('\n', fn.name, subbed_types, sep = '')
+	print('\n', fn.name, instance_key, sep = '')
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1243,11 +1281,22 @@ while fn_queue:
 			if not match[2]:
 				ret_type = types['void']
 			else:
+				# We don't use the expected size
+				# for the case of returning UNSPECIFIED_TYPE
 				ret_type = parse_exp(match[2].strip(),
 					dest_reg = dest_reg, fn_queue = fn_queue,
 					variables = fn_instance.variables)
 
-			if ret_type not in (fn_types[fn.ret_type], UNSPECIFIED_TYPE):
+			fn_type_list = parse_type(fn.ret_type, fn_types)
+
+			if fn_type_list is None:
+				# TODO: better message
+				err(f'Type {fn.ret_type!r} is not available.')
+			if len(fn_type_list) != 1:
+				err('Return type must be exactly one type')
+			expected_ret_type, = fn_type_list
+
+			if ret_type not in (expected_ret_type, UNSPECIFIED_TYPE):
 				err('Mismatched type. '
 					f'{fn.name} expects {fn_types[fn.ret_type]}. '
 					f'Trying to return {ret_type}')
