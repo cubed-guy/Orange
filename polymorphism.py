@@ -366,6 +366,7 @@ class Branch(Enum):
 	ELSE = object()
 	WHILE = object()
 	WHILEELSE = object()
+	FUNCTION = object()
 
 class Ctrl:
 	def __init__(self, ctrl_no, branch: Branch):
@@ -1063,6 +1064,7 @@ arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
 
 in_function = False
 curr_type = None
+scope_level = 0
 
 tell = 0
 for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
@@ -1073,8 +1075,6 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 	match = Patterns.split_word.match(line)
 
 	if   curr_type is not None:
-		if line.startswith('#'): err('Type methods are not yet supported')
-
 		if match[1] == 'type':
 			err('Recursive types are not supported')
 
@@ -1098,14 +1098,20 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 				else:
 					curr_type.size += T.size
 
+		elif match[1] == 'fn':
+			err('Type methods are not yet supported')
+			# in_function = True
+
 		elif match[1] == 'end':
 			print('After definition:')
 			for name, field in curr_type.fields.items():
 				print(name, field.type)
 			curr_type = None
+			scope_level -= 1
 
-	elif match and match[1] == 'type':
-		if in_function: err('Local type definitions are not yet supported')
+	elif not match: continue
+	elif match[1] == 'type':
+		if scope_level: err('Local type definitions are not yet supported')
 
 		name, *args = match[2].split()
 		# if args: err('Polymorphic types are not yet supported')
@@ -1113,7 +1119,9 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 		if name in types: err(f'Type {name!r} already defined')
 		curr_type = Type(name, 0, {}, args = args)
 		types[name] = curr_type
-		print(curr_type)
+		print('NEW TYPE', curr_type)
+
+		scope_level += 1
 
 		# if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
 		# 	if pointer:
@@ -1129,9 +1137,12 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 		# if T is ANY_TYPE:
 		# 	err("A variable of type 'any' must be a pointer")
 
-	elif line.startswith('#'):  # function header
+	elif match[1] == 'fn':  # function header
+		if scope_level:
+			err('Local functions are not supported')
+
 		# name typeargs : type arg, comma separated
-		pre, arrow, ret_type = line[1:].partition('->')
+		pre, arrow, ret_type = match[2].partition('->')
 		pre, _, args = pre.partition(':')
 		name, *typeargs = pre.split()
 		args = args.strip()
@@ -1157,6 +1168,21 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 			fn.add_sub(())
 			fn_queue.append((fn, ()))
 
+		in_function = True
+		scope_level += 1
+
+	elif match[1] in ('if', 'while'):
+		scope_level += 1
+
+	elif match[1] == 'end':
+		scope_level -= 1
+		if scope_level < 0:
+			err('end statement does not match any block')
+		# elif scope_level == 1 and in_function and curr_type is not None:
+		# 	in_function = False
+		# else scope_level == 0:
+		# in_function = False
+
 if not fn_queue:
 	err("No definition of function 'main' found.")
 
@@ -1177,6 +1203,8 @@ while fn_queue:
 	fn_instance.init_args_vars(types)
 	offset = fn_instance.offset
 
+	scope_level = 1
+
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
 		# let x type
@@ -1186,7 +1214,6 @@ while fn_queue:
 
 		line = Patterns.stmt.match(Shared.line)[2]
 		if not line: continue
-		if line.startswith('#'): break
 
 		match = Patterns.split_word.match(line)
 		if match[1] == 'let':
@@ -1222,6 +1249,13 @@ while fn_queue:
 				Variable(name, offset, T, Shared.line_no)
 			)
 
+		elif match[1] in ('if', 'while'):
+			scope_level += 1
+
+		elif match[1] == 'end':
+			scope_level -= 1
+			if not scope_level: break  # end of function
+
 
 	# I might be able to support overloading too and just disallow conflicts
 	# We already have the line number in the struct, so we can error nicely
@@ -1253,7 +1287,7 @@ while fn_queue:
 		output(f'mov {size_prefix(arg.type.size)} [rsp + {arg.offset}], ',
 			reg_str)
 
-	ctrl_stack = []
+	ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
 
 	print('\n', fn.name, instance_key, sep = '')
 
@@ -1263,8 +1297,6 @@ while fn_queue:
 		match = Patterns.stmt.match(Shared.line)
 		line = match[2]  # maybe indentation?
 		if not line: continue
-
-		if line.startswith('#'): break
 
 		output(f'; ({Shared.line_no}) {Shared.line.strip()}')
 		print(f'{Shared.line_no} {Shared.line.strip()!r}')
@@ -1386,6 +1418,8 @@ while fn_queue:
 				output(f'_E{ctrl.ctrl_no}:')
 			elif ctrl.branch is Branch.ELSE:
 				output(f'_END{ctrl.ctrl_no}:')
+			elif ctrl.branch is Branch.FUNCTION:
+				break
 			else:  # ctrl.branch is an integer
 				output(f'_E{ctrl.ctrl_no}_{ctrl.branch+1}:')
 
