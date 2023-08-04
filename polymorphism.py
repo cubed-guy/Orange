@@ -255,16 +255,17 @@ MISSING = type('MISSING', (), {
 })()
 
 class Type:
-	def __init__(self, name, size, fields: dict[str, Variable], args = ()):
+	def __init__(self, name, size = 0, args = ()):
 		self.name = name
 		self.size = size
-		self.fields = fields
+		self.fields = {}
 		self.deref = None
 		self.ref = None
 		self.args = args
 		self.parent = self
 
 		self.instances = {}
+		self.methods = {}
 
 	def __repr__(self):
 		return f'{self.__class__.__name__}({self.name})'
@@ -297,9 +298,10 @@ class Type:
 			local_types = dict(zip(self.args, args))
 			instance_types = types | local_types
 
-			instance = Type(' '.join(T.name for T in [self, *args]), 0, {})
+			instance = Type(' '.join(T.name for T in [self, *args]))
 			instance.args = args
 			instance.parent = self
+			instance.methods = self.methods
 			self.instances[args] = instance
 
 		for name, field in self.fields.items():
@@ -880,9 +882,23 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		arg_types.append(UNSPECIFIED_TYPE)
 		output(f'mov {arg_reg:8}, {alloc_fac}')
 
-	if fn_name not in function_headers:
-		err(f'No function named {fn_name!r}')
-	fn_header = function_headers[fn_name]
+	caller_type_name, dot, fn_name = fn_name.rpartition('.')
+
+	if dot:
+		type_list = parse_type(caller_type_name, fn_types)
+		if type_list is None:
+			err(f'{caller_type_name!r} is not available')
+		if len(type_list) != 1:
+			err('Method calls expect exactly one type')
+		caller_type, = type_list
+		if fn_name not in caller_type.methods:
+			err(f'{caller_type} has no method named {fn_name!r}')
+		fn_header = caller_type.methods[fn_name]
+
+	elif fn_name not in function_headers:
+		err(f'{caller_type} has no method named {fn_name!r}')
+	else:
+		fn_header = function_headers[fn_name]
 	# use fn_header.typeargs, fn_header.args
 	# We could store {typename: Type}, but rn we have {typename: typename}
 
@@ -1038,11 +1054,11 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 fn_queue = []
 # Builtins
 types = {
-	'str': Type('str', 8, {}),
-	'int': Type('int', 4, {}),
-	'char': Type('char', 1, {}),
-	'void': Type('void', 0, {}),
-	'any': Type('any', None, {}),
+	'str': Type('str', 8),
+	'int': Type('int', 4),
+	'char': Type('char', 1),
+	'void': Type('void', 0),
+	'any': Type('any', None),
 }
 ANY_TYPE = types['any']
 
@@ -1074,7 +1090,7 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 
 	match = Patterns.split_word.match(line)
 
-	if   curr_type is not None:
+	if curr_type is not None and not in_function:
 		if match[1] == 'type':
 			err('Recursive types are not supported')
 
@@ -1099,8 +1115,38 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 					curr_type.size += T.size
 
 		elif match[1] == 'fn':
-			err('Type methods are not yet supported')
-			# in_function = True
+			# err('Type methods are not yet supported')
+
+			# name typeargs : type arg, comma separated
+			pre, arrow, ret_type = match[2].partition('->')
+			pre, _, args = pre.partition(':')
+			name, *typeargs = pre.split()
+			args = args.strip()
+			args = args.split(',')
+			if args[-1] == '': args.pop()
+
+			if not arrow: ret_type = 'void'
+			else: ret_type = ret_type.strip()
+
+			# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
+
+			if name in curr_type.methods:
+				err(f'Function {name!r} already defined.')
+
+			fn = Function_header(name,
+				(*typeargs, *curr_type.args),  # curr_type.args may have Type objects?
+				tuple(arg.rsplit(maxsplit=1) for arg in args),
+				ret_type, tell, Shared.line_no
+			)
+			print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+			curr_type.methods[name] = fn
+
+			if name == 'main':  # not be confused with if __name__ == '__main__':
+				fn.add_sub(())
+				fn_queue.append((fn, ()))
+
+			in_function = True
+			scope_level += 1
 
 		elif match[1] == 'end':
 			print('After definition:')
@@ -1117,7 +1163,7 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 		# if args: err('Polymorphic types are not yet supported')
 
 		if name in types: err(f'Type {name!r} already defined')
-		curr_type = Type(name, 0, {}, args = args)
+		curr_type = Type(name, args = args)
 		types[name] = curr_type
 		print('NEW TYPE', curr_type)
 
@@ -1178,10 +1224,10 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 		scope_level -= 1
 		if scope_level < 0:
 			err('end statement does not match any block')
-		# elif scope_level == 1 and in_function and curr_type is not None:
-		# 	in_function = False
-		# else scope_level == 0:
-		# in_function = False
+		elif scope_level == 1 and in_function and curr_type is not None:
+			in_function = False
+		elif scope_level == 0:
+			in_function = False
 
 if not fn_queue:
 	err("No definition of function 'main' found.")

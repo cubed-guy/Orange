@@ -11,6 +11,14 @@ end
 type Node T
 	let data T
 	let next &Node T
+
+	fn nth: &Node T node, int n -> &Node T
+		while n
+			node = node.next
+			n = n-1
+		end
+		return node
+	end
 end
 
 	// A polymorphic function that returns the argument
@@ -335,6 +343,28 @@ fn Node_nth T: &Node T node, int n -> &Node T
 	return node
 end
 
+fn classmethods
+	let head &Node int
+	let node &Node int
+	node = alloc(Node int)
+	head = node
+
+	node.data = 90
+	node.next = alloc(Node int)
+	node = node.next
+
+	node.data = 45
+	node.next = alloc(Node int)
+	node = node.next
+
+	node.data = 22
+	node.next = alloc(Node int)
+	node = 0
+
+	node = Node int.nth(head, 2)
+	println(node.data)
+end
+
 fn main
 	basics()
 	operations()
@@ -343,4 +373,5 @@ fn main
 	alloc_stuff()
 	linked_lists()
 	polymorphic_structs()
+	classmethods()
 end
