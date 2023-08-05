@@ -371,6 +371,11 @@ class Branch(Enum):
 	WHILEELSE = object()
 	FUNCTION = object()
 
+class Exp_type(Enum):
+	TOKEN = object()
+	GETITEM = object()
+	CALL = object()
+
 class Ctrl:
 	def __init__(self, ctrl_no, branch: Branch):
 		self.ctrl_no = ctrl_no
@@ -748,6 +753,15 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 
 	idx = Patterns.find_through_strings(exp, '(')
 	if idx == -1:
+		idx = Patterns.find_through_strings(exp, '[')
+		if idx == -1:
+			exp_type = Exp_type.TOKEN
+		else:
+			exp_type = Exp_type.GETITEM
+	else:
+		exp_type = Exp_type.CALL
+
+	if exp_type is Exp_type.TOKEN:
 		# [x] T flag, dest_reg flag -> return T
 
 		insts, exp_clause, T = parse_token(exp, variables=variables)
@@ -810,17 +824,41 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 
 	print('Parse exp', repr(exp))
 
-	if exp[-1] != ')':
+	if exp_type is Exp_type.CALL and exp[-1] != ')':
 		err("Expected function call to end with a closing parenthesis ')'")
+	if exp_type is Exp_type.GETITEM and exp[-1] != ']':
+		err("Expected item access to end with a closing square bracket ']'")
 
 
-	fn_name = exp[:idx].strip()
-	if fn_name.startswith('*'):
-		fn_deref = True
-		fn_name = fn_name[1:].strip()
+	if exp_type is Exp_type.GETITEM:
+		# TODO: method call support
+		if exp.startswith('&'):
+			fn_name = '_getref'
+			exp = exp[1:]
+		else:
+			fn_name = '_getitem'
+
+		insts, clause, T = parse_token(exp[:idx].strip(), variables=variables)
+		print(f'Type of {exp[:idx]!r} is {T}')
+
+		# TODO: What if I want an integer of a different type?
+
+		for inst in insts:
+			output(inst.format(dest_reg=Register.c))
+		if clause is not None:
+			reg_str = Register.c.encode(size=Type.get_size(T))
+			output(f'mov {reg_str}, {clause.format(dest_reg=Register.c)}')
+
+		arg_types = [T]
+		fn_name = f'{T.name}.{fn_name}'
 	else:
-		fn_deref = False
-	arg_types = []
+		fn_name = exp[:idx].strip()
+		if fn_name.startswith('*'):
+			fn_deref = True
+			fn_name = fn_name[1:].strip()
+		else:
+			fn_deref = False
+		arg_types = []
 
 	if fn_name == 'alloc':
 		alloc_type = None

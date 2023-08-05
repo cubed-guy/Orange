@@ -19,6 +19,10 @@ type Node T
 		end
 		return node.data
 	end
+
+	fn _getitem: &Node T self, int n -> T
+		return &Node T.nth(self, n)
+	end
 end
 
 type Tree T
@@ -426,6 +430,13 @@ fn get_nth T: T iter, int n -> int
 	return T.nth(iter, n) // it'll error here if {T} not of form {A int}
 end
 
+fn array_index
+	let head &Node int
+	let node &Node int
+	node = alloc(Node int)
+	
+end
+
 fn main
 	basics()
 	operations()
@@ -435,4 +446,5 @@ fn main
 	linked_lists()
 	polymorphic_structs()
 	classmethods()
+	array_index()
 end
