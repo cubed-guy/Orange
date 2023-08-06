@@ -433,7 +433,25 @@ end
 fn array_index
 	let head &Node int
 	let node &Node int
+
 	node = alloc(Node int)
+	head = node
+
+	node.data = 255000
+	node.next = alloc(Node int)
+	node = node.next
+
+	node.data = 13
+	node.next = alloc(Node int)
+	node = node.next
+
+	node.data = 72
+	node.next = alloc(Node int)
+	node = 0
+
+	let x int
+	x = head[2]
+	println(x)
 	
 end
 
