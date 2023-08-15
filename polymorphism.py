@@ -941,16 +941,21 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		if fn_name not in caller_type.methods:
 			err(f'{caller_type} has no method named {fn_name!r}')
 		fn_header = caller_type.methods[fn_name]
-
 	elif fn_name not in function_headers:
-		err(f'{caller_type} has no method named {fn_name!r}')
+		err(f'No function named {fn_name!r}')
 	else:
 		fn_header = function_headers[fn_name]
+		caller_type = None
+
 	# use fn_header.typeargs, fn_header.args
 	# We could store {typename: Type}, but rn we have {typename: typename}
 
 	# Populate type_mappings
 	type_mappings = {T: None for T in fn_header.typeargs}
+	if caller_type is not None:
+		type_mappings |= dict(
+			zip(caller_type.parent.args, caller_type.args)
+		)
 	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
 		if arg_type is not UNSPECIFIED_TYPE:
 			curr_mappings = arg_type.match_pattern(type_str, types)
@@ -979,14 +984,13 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		if subbed_type is UNSPECIFIED_TYPE:
 			type_mappings[typename] = types['int']
 
-	instance_key = tuple(type_mappings[typearg].name for typearg in fn_header.typeargs)
 	try:
-		idx = instance_key.index(None)
-	except ValueError:
-		pass  # no problem
-	else:
-		err(f'Type argument {fn_header.typeargs[idx]!r} not mapped in {fn_header.name!r}')
-
+		instance_key = tuple(type_mappings[typearg_name].name for typearg_name in fn_header.typeargs)
+	except AttributeError:
+		for typearg_name in fn_header.typeargs:
+			if type_mappings[typearg_name] is not None: continue
+			err(f'Type argument {typearg_name!r} not mapped in {fn_header.name!r}')
+		err('[Internal Error] All types mapped but still got a TypeError')
 
 	if instance_key in fn_header.instances:
 		fn_instance = fn_header.instances[instance_key]
