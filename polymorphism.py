@@ -172,6 +172,10 @@ call printf
 
 add rsp, 48
 ret
+
+_dhash:
+
+
 ''')
 
 # Nestless?
@@ -246,7 +250,7 @@ class Variable:  # Instantiated when types are known
 		self.decl_line_no = decl_line_no
 
 UNSPECIFIED_TYPE = type('UNSPECIFIED_TYPE', (), {
-	'__repr__': lambda s: f'Type<UNSPECIFIED>'
+	'__repr__': lambda s: f'Type<UNSPECIFIED>', 'deref': None
 })()
 FLAG_TYPE = type('FLAG_TYPE', (), {
 	'__repr__': lambda s: f'Type<FLAG>'
@@ -338,6 +342,11 @@ class Type:
 					err(f'{expected_type!r} does not have deref for {token!r}')
 				expected_type = expected_type.deref
 				token = token[1:]
+			elif expected_type.deref is not None:
+				if token in types:
+					print(f'{types[token] = }, {expected_type = }')
+					if types[token].deref == expected_type.deref:
+						expected_type = types[token]
 
 			if token not in types:
 				if token not in out_mappings:
@@ -464,6 +473,11 @@ class Register(Enum):
 
 		return self.encode(size=int(fmt))
 
+class Address_modes(Enum):
+	DEREF = -1
+	NONE = 0
+	ADDRESS = 1
+
 def size_prefix(size):
 	if size == 1:
 		return 'byte'
@@ -528,7 +542,7 @@ def parse_type(type_str, types) -> Optional[list[Type]]:
 	err('Types cannot be parsed')
 	return [UNSPECIFIED_TYPE]
 
-def parse_token(token: 'stripped', *, variables) \
+def parse_token(token: 'stripped', types, *, variables) \
 	-> (list[str], Union[str, int], Type):
 	# (instructions to get the value of token, expression, type)
 
@@ -553,28 +567,49 @@ def parse_token(token: 'stripped', *, variables) \
 				r_operand = None
 				continue
 
-			o_insts, o_clause, o_type = parse_token(r_operand, variables=variables)
+			o_insts, o_clause, o_type = parse_token(r_operand, types,
+				variables=variables)
 			if o_insts: err(f'Expression {token!r} is too complex')
 			token = l_operand
 			break
 
+	print(f'PARSING TOKEN {token!r}')
 	if token.startswith('&'):
-		addr = 1
+		addr = Address_modes.ADDRESS
 		token = token[1:].lstrip()
 	elif token.startswith('*'):
-		addr = -1
+		addr = Address_modes.DEREF
 		token = token[1:].lstrip()
 	else:
-		addr = 0
+		addr = Address_modes.NONE
 
-	if token.isidentifier():
+	if ':' in token:
+		exp, _, field = token.rpartition(':')
+		field = field.strip()
+
+		if field == 'size':
+			type_list = parse_type(exp, types)
+			if type_list is None:
+				err(f'Type {exp!r} not available')
+			if addr is Address_modes.ADDRESS:
+				val = PTR_SIZE
+			else:
+				if len(type_list) != 1:
+					err(f'{exp!r} does not correspond to a single type')
+				T, = type_list
+				val = T.size
+			T = UNSPECIFIED_TYPE
+		else:  # TODO: type:name, var:type
+			err(f'Unsupported metadata field {field!r}')
+
+	elif token.isidentifier():
 		# if addr: err("Can't take addresses of local variables yet")
 		if token not in variables: err(f'{token!r} not defined')
 		var = variables[token]
 		offset = var.offset
 		clause = f'rsp + {offset}'
 		T = var.type
-		if addr == 1:
+		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
 			insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{clause}]')
 			clause = None
@@ -620,7 +655,7 @@ def parse_token(token: 'stripped', *, variables) \
 			offset += var.offset
 
 		clause = f'{base_reg} + {offset}'
-		if addr:
+		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
 			insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{clause}]')
 			clause = None
@@ -628,13 +663,17 @@ def parse_token(token: 'stripped', *, variables) \
 			clause = f'{size_prefix(T.size)} [{clause}]'
 
 	elif token.isdigit():
-		if addr:
+		if addr is Address_modes.ADDRESS:
 			err("Can't take address of a integer literal")
+		if addr is Address_modes.DEREF:
+			err("Can't dereference a integer literal")
 		val = int(token)
 
 	elif token.startswith("'"):
-		if addr:
+		if addr is Address_modes.ADDRESS:
 			err("Can't take address of a character literal")
+		if addr is Address_modes.DEREF:
+			err("Can't dereference a character literal")
 		if token[-1] != "'":
 			err('Expected end quote (\') at the end of character literal.')
 
@@ -663,7 +702,7 @@ def parse_token(token: 'stripped', *, variables) \
 		T = types['char']
 
 	elif token.startswith('"'):
-		if addr: err('Cannot take address of string literal')
+		if addr is Address_modes.ADDRESS: err('Cannot take address of string literal')
 
 		string_data = bytearray()
 		h_val = None
@@ -722,6 +761,17 @@ def parse_token(token: 'stripped', *, variables) \
 	if val is not None:
 		clause = f'{val}'
 
+	if addr is Address_modes.DEREF:
+		if clause is not None:
+			insts += (
+				(f'mov {{dest_reg:{Type.get_size(T)}}}, {clause}',)
+			)
+		if T.deref in (None, ANY_TYPE):
+			err(f'Cannot dereference a value of type {T}')
+		size = Type.get_size(T.deref)
+		clause = f'{size_prefix(size)} [{{dest_reg:{Type.get_size(T)}}}]'
+		T = T.deref
+
 	if r_operand is not None:
 		insts = [
 			# *o_insts,  # too complex if not empty
@@ -734,17 +784,9 @@ def parse_token(token: 'stripped', *, variables) \
 			*get_operator_insts(operator, o_clause, o_type)
 		]
 		clause = None
+		print(f'OPERATOR {operator!r} using {T} and {o_type} ({addr = }) gives... ', end='')
 		T = operator_result_type(operator, T, o_type)
-	if addr == -1:
-		if clause is not None:
-			insts += (
-				(f'mov {{dest_reg:{Type.get_size(T)}}}, {clause}',)
-			)
-		if T.deref in (None, ANY_TYPE):
-			err(f'Cannot dereference a value of type {T}')
-		size = Type.get_size(T.deref)
-		clause = f'{size_prefix(size)} [{{dest_reg:{Type.get_size(T)}}}]'
-		T = T.deref
+		print(T)
 	return insts, clause, T
 
 # muddles rbx if dest_reg is Flag
@@ -764,7 +806,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 	if exp_type is Exp_type.TOKEN:
 		# [x] T flag, dest_reg flag -> return T
 
-		insts, exp_clause, T = parse_token(exp, variables=variables)
+		insts, exp_clause, T = parse_token(exp, fn_types, variables=variables)
 		# print('Token', repr(exp), 'has a type of', T)
 
 		if isinstance(T, Flag):
@@ -838,7 +880,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		else:
 			fn_name = '_getitem'
 
-		insts, clause, T = parse_token(exp[:idx].strip(), variables=variables)
+		insts, clause, T = parse_token(exp[:idx].strip(), fn_types, variables=variables)
 		print(f'Type of {exp[:idx]!r} is {T}')
 
 		# TODO: What if I want an integer of a different type?
@@ -896,13 +938,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 
 		print('Arg:', arg)
 
-		if arg.startswith('*'):
-			deref = True
-			arg = arg[1:].lstrip()
-		else:
-			deref = False
-
-		insts, clause, T = parse_token(arg, variables=variables)
+		insts, clause, T = parse_token(arg, fn_types, variables=variables)
 		print(f'Type of {arg!r} is {T}')
 
 		# TODO: What if I want an integer of a different type?
@@ -912,14 +948,6 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		if clause is not None:
 			reg_str = arg_reg.encode(size=Type.get_size(T))
 			output(f'mov {reg_str}, {clause.format(dest_reg=arg_reg)}')
-
-		if deref:
-			if T.deref in (None, ANY_TYPE):
-				err(f'Cannot dereference object of type {T.name!r}')
-			T = T.deref
-			size = T.size
-			dereffed_reg = arg_reg.encode(size=size)
-			output(f'mov {dereffed_reg}, {size_prefix(size)} [{reg_str}]')
 
 		arg_types.append(T)
 
@@ -938,7 +966,10 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		caller_type, = type_list
 		if caller_type.deref is not None:
 			caller_type = caller_type.deref
-		if fn_name not in caller_type.methods:
+		if fn_name == 'hash':  # fn_name in default_methods
+			output('mov rax, rcx')
+			return types['int']
+		elif fn_name not in caller_type.methods:
 			err(f'{caller_type} has no method named {fn_name!r}')
 		fn_header = caller_type.methods[fn_name]
 	elif fn_name not in function_headers:
@@ -1085,15 +1116,30 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 	# int  - int
 	# int  - char
 	# char - char
-	if types['void'] in (l_type, r_type):
+	if types['void'] in [l_type, r_type]:
 		err(f'Unsupported operator {operator!r} between '
 			f'{l_type} and {r_type}')
 
-	if types['str'] in (l_type, r_type):
+	if types['str'] in [l_type, r_type]:
 		if operator not in '+-' or r_type is l_type:
 			err(f'Unsupported operator {operator!r} between '
 				f'{l_type} and {r_type}')
 		return types['str']
+
+	if operator in '+-':
+		if l_type.deref is not None and r_type.deref is None:
+			if r_type not in (types['int'], UNSPECIFIED_TYPE):
+				err(f'Cannot offset a pointer using {r_type}')
+			return l_type
+
+	if operator == '+':
+		if r_type.deref is not None and l_type.deref is None:
+			if l_type not in (types['int'], UNSPECIFIED_TYPE):
+				err(f'Cannot offset a pointer using {l_type}')
+			return r_type
+
+		if None not in (l_type.deref, r_type.deref):
+			err('Cannot add pointers')
 
 	if operator == '>':  return Flag.g
 	if operator == '<':  return Flag.l
@@ -1124,6 +1170,7 @@ types = {
 	'any': Type('any', None),
 }
 ANY_TYPE = types['any']
+types['str'].deref = types['char']
 
 # Builtins
 # Function_header(name, type_args, *args(type, name), ret_type, tell, line_no)
@@ -1565,7 +1612,7 @@ while fn_queue:
 				variables = fn_instance.variables)
 
 			if dest is not None:
-				insts, dest_clause, dest_type = parse_token(dest,
+				insts, dest_clause, dest_type = parse_token(dest, fn_types,
 					variables = fn_instance.variables)
 
 				if not dest_clause: err('Destination too complex')

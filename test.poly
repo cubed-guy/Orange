@@ -455,6 +455,84 @@ fn array_index
 	
 end
 
+type Dict K V
+	let cap int
+	let keys &K
+	let values &V
+	let used int
+
+	// So, this is a constructor? And it works? And it's in my language? Crazy!
+	fn new: int cap -> &Dict K V
+		let out &Dict K V
+		out = alloc(Dict K V)
+
+		out.cap = cap
+		out.keys = alloc(K, cap)
+		out.values = alloc(V, cap)
+		out.used = 0
+
+		return out
+	end
+
+	fn index: &Dict K V dict, K key -> int
+		let hash int
+		hash = K.hash(key)
+
+		let index int
+
+		let cap int
+		cap = dict.cap
+		index = hash % cap
+
+		// index = index * sizeof K
+		let curr_key K
+		let scaled_index int
+		scaled_index = index * K:size
+		let curr_key_ref &K
+		curr_key_ref = dict.keys + scaled_index
+
+		let scaled_cap int
+		scaled_cap = dict.cap * K:size
+
+		let scaled_inc int
+		scaled_inc = 7 * K:size
+
+		// we may need _eq and _ne along with _setitem
+		while noop(*curr_key_ref != key)
+			scaled_index = scaled_index + scaled_inc
+			index = index + inc
+			if scaled_index > scaled_cap
+				scaled_index = scaled_index - scaled_cap
+				index = index - dict.cap
+			end
+			curr_key_ref = dict.keys + scaled_index
+			if *scaled_key_ref == 0
+				break
+			end
+		end
+		return index
+	end
+end
+
+fn noop A: A x -> A
+	return x
+end
+
+fn dictionaries
+	let dict &Dict str int
+	dict = Dict str int.new(5)
+	printaddr(dict)
+	printaddr(dict.keys)
+	printaddr(dict.values)
+
+	let index int
+	index = Dict str int.index(dict, "new key")
+
+	println(str:size)
+	println(&int:size)
+	println(&Dict str int:size)
+end
+
 fn main
 	basics()
 	operations()
@@ -465,4 +543,5 @@ fn main
 	polymorphic_structs()
 	classmethods()
 	array_index()
+	dictionaries()
 end
