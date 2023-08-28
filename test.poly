@@ -492,21 +492,21 @@ type Dict K V
 		curr_key_ref = dict.keys + scaled_index
 
 		let scaled_cap int
-		scaled_cap = dict.cap * K:size
+		scaled_cap = cap * K:size
 
 		let scaled_inc int
 		scaled_inc = 7 * K:size
 
 		// we may need _eq and _ne along with _setitem
-		while noop(*curr_key_ref != key)
+		while *curr_key_ref != key
 			scaled_index = scaled_index + scaled_inc
-			index = index + inc
+			index = index + K:size
 			if scaled_index > scaled_cap
 				scaled_index = scaled_index - scaled_cap
-				index = index - dict.cap
+				index = index - cap
 			end
 			curr_key_ref = dict.keys + scaled_index
-			if *scaled_key_ref == 0
+			if *curr_key_ref == 0
 				break
 			end
 		end

@@ -100,6 +100,7 @@ output(r'''
 global main
 extern printf
 extern puts
+extern strcmp
 extern malloc
 extern free
 extern exit
@@ -172,10 +173,6 @@ call printf
 
 add rsp, 48
 ret
-
-_dhash:
-
-
 ''')
 
 # Nestless?
@@ -573,7 +570,6 @@ def parse_token(token: 'stripped', types, *, variables) \
 			token = l_operand
 			break
 
-	print(f'PARSING TOKEN {token!r}')
 	if token.startswith('&'):
 		addr = Address_modes.ADDRESS
 		token = token[1:].lstrip()
@@ -598,6 +594,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 					err(f'{exp!r} does not correspond to a single type')
 				T, = type_list
 				val = T.size
+			print(f'{T}:size = {val}')
 			T = UNSPECIFIED_TYPE
 		else:  # TODO: type:name, var:type
 			err(f'Unsupported metadata field {field!r}')
@@ -964,18 +961,31 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		if len(type_list) != 1:
 			err('Method calls expect exactly one type')
 		caller_type, = type_list
-		if caller_type.deref is not None:
-			caller_type = caller_type.deref
+		# if caller_type.deref is not None:
+		# 	caller_type = caller_type.deref
+
+		# NOTE: Temp
 		if fn_name == 'hash':  # fn_name in default_methods
+			if dest_reg is Flag:
+				output('test rcx, rcx')
+				return Flags.nz
 			output('mov rax, rcx')
 			return types['int']
 		elif fn_name not in caller_type.methods:
-			err(f'{caller_type} has no method named {fn_name!r}')
+			# check for deref only if method doesn't exist
+			if caller_type.deref is not None:
+				caller_type = caller_type.deref
+				if fn_name not in caller_type.methods:
+					err(f'{caller_type} has no method named {fn_name!r}')
+			else:
+				err(f'{caller_type} has no method named {fn_name!r}')
 		fn_header = caller_type.methods[fn_name]
+		print('METHOD  ', fn_name, fn_header)
 	elif fn_name not in function_headers:
 		err(f'No function named {fn_name!r}')
 	else:
 		fn_header = function_headers[fn_name]
+		print('FUNCTIOn', fn_name, fn_header)
 		caller_type = None
 
 	# use fn_header.typeargs, fn_header.args
@@ -1045,21 +1055,42 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 	elif len(ret_type_list) != 1:
 		err('Return type string does not evaluate to a single type')
 	ret_type, = ret_type_list
+
+	print(f'{dest_reg = }')
+	if dest_reg is Flag:
+		# output is in rax
+		print('Classified as a flag')
+		output(f'test {Register.a:{ret_type.size}}, '
+			f'{Register.a:{ret_type.size}}')
+		return Flag.nz
+
+	print('Not classified as a flag')
+
 	return ret_type
 
 
 def get_operator_insts(operator, operand_clause, operand_type):
+	# Should not muddle registers. So wee can't call functions.
+
+	# I don't put any constraints. Makes it unsafe, but also flexible.
+	# We'll see if that's a good idea.
+
 	if   operator == '+': inst = 'add'
 	elif operator == '-': inst = 'sub'
 	elif operator == '&': inst = 'and'
 	elif operator == '^': inst = 'xor'
 	elif operator == '|': inst = 'or'
-	elif operator == '<': inst = 'cmp'
-	elif operator == '>': inst = 'cmp'
-	elif operator == '<=': inst = 'cmp'
-	elif operator == '>=': inst = 'cmp'
-	elif operator == '==': inst = 'cmp'
-	elif operator == '!=': inst = 'cmp'
+	elif operator in ('<', '>', '<=', '>='): inst = 'cmp'
+	elif operator in ('==', '!='):
+		# get_operator_insts() should take type of both operands
+		if operand_type is types['str']:
+			return [
+				f'mov rcx, {{dest_reg:8}}',
+				f'mov rdx, {operand_clause}',
+				'call strcmp',
+				'cmp al, 0'
+			]
+		inst = 'cmp'
 	elif operator == '<<':
 		size = Type.get_size(operand_type)
 		return [
@@ -1083,8 +1114,8 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator == '/':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.a:{size}}, {{dest_reg:{size}}}'
-			f'xor rdx, rdx'
+			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
+			f'xor rdx, rdx',
 			f'mov {Register.b:{size}}, {operand_clause}',
 			f'div {Register.b:{size}}',
 			f'mov {{dest_reg:{size}}}, {Register.a:{size}}'
@@ -1092,8 +1123,8 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator == '%':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.a:{size}}, {{dest_reg:{size}}}'
-			f'xor rdx, rdx'
+			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
+			f'xor rdx, rdx',
 			f'mov {Register.b:{size}}, {operand_clause}',
 			f'div {Register.b:{size}}',
 			f'mov {{dest_reg:{size}}}, {Register.d:{size}}'
@@ -1121,7 +1152,16 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 			f'{l_type} and {r_type}')
 
 	if types['str'] in [l_type, r_type]:
-		if operator not in '+-' or r_type is l_type:
+		# r==l and o not in (==, !=) or o not in ('+', '-', '==', '!=')
+		# e & ~(== | !=) | ~(+ | - | == | !=)
+		# e & ~== & ~!= | ~+ & ~- & ~== & ~!=
+		# (e | ~+ & ~-) & ~== & ~!=
+		# (e | ~(+ | -)) & ~(== | !=)
+		# (r==l or o not in ('+', '-')) and o not in ('==', '!=')
+		if (
+			(operator not in ('+', '-') or r_type is l_type)
+			and operator not in ('==', '!=')
+		):
 			err(f'Unsupported operator {operator!r} between '
 				f'{l_type} and {r_type}')
 		return types['str']
@@ -1183,8 +1223,13 @@ function_headers = {
 	'alloc': Function_header('alloc', (), (('int', 'n'),), '', 0, 0),
 	'free': Function_header('free', (), (('&any', 'p'),), 'void', 0, 0),
 }
+
 for fn in function_headers.values():
 	fn.add_sub(())
+
+for builtin_type in types.values():
+	for method in builtin_type.methods.values():
+		method.add_sub(())
 
 arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
 
@@ -1224,9 +1269,7 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 				else:
 					curr_type.size += T.size
 
-		elif match[1] == 'fn':
-			# err('Type methods are not yet supported')
-
+		elif match[1] == 'fn':  # methods
 			# name typeargs : type arg, comma separated
 			pre, arrow, ret_type = match[2].partition('->')
 			pre, _, args = pre.partition(':')
@@ -1250,10 +1293,6 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 			)
 			print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
 			curr_type.methods[name] = fn
-
-			if name == 'main':  # not be confused with if __name__ == '__main__':
-				fn.add_sub(())
-				fn_queue.append((fn, ()))
 
 			in_function = True
 			scope_level += 1
@@ -1507,6 +1546,8 @@ while fn_queue:
 				variables = fn_instance.variables
 			)
 
+
+
 			if ret_flag is Flag.ALWAYS:
 				output(f'jmp _E{ctrl_no}')
 			elif ret_flag is not Flag.NEVER:
@@ -1596,6 +1637,9 @@ while fn_queue:
 				err('continue outside a loop')
 
 			output(f'jmp {ctrl.label}')
+
+		elif match[1] == 'type':
+			err('Local types are not yet supported')
 
 		else:
 			match = Patterns.through_strings(r'(?<!=)=(?!=)').match(line)
