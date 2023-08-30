@@ -790,6 +790,8 @@ def parse_token(token: 'stripped', types, *, variables) \
 
 # muddles rbx if dest_reg is Flag
 def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
+	# extract call_function(fn, args)
+
 	global types, fn_types
 
 	idx = Patterns.find_through_strings(exp, '(')
@@ -902,6 +904,22 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 			fn_deref = False
 		arg_types = []
 
+	ret_type = call_function(fn_name, arg_types, exp, idx, variables=variables)
+
+	print(f'{dest_reg = }')
+	if dest_reg is Flag:
+		# output is in rax
+		print('Classified as a flag')
+		output(f'test {Register.a:{ret_type.size}}, '
+			f'{Register.a:{ret_type.size}}')
+		return Flag.nz
+
+	print('Not classified as a flag')
+
+	return ret_type
+
+
+def call_function(fn_name, arg_types, exp, idx, *, variables):
 	if fn_name == 'alloc':
 		alloc_type = None
 		alloc_fac  = None
@@ -1061,18 +1079,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		err('Return type string does not evaluate to a single type')
 	ret_type, = ret_type_list
 
-	print(f'{dest_reg = }')
-	if dest_reg is Flag:
-		# output is in rax
-		print('Classified as a flag')
-		output(f'test {Register.a:{ret_type.size}}, '
-			f'{Register.a:{ret_type.size}}')
-		return Flag.nz
-
-	print('Not classified as a flag')
-
 	return ret_type
-
 
 def get_operator_insts(operator, operand_clause, operand_type):
 	# Should not muddle registers. So wee can't call functions.
