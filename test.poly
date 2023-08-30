@@ -482,7 +482,12 @@ type Dict K V
 
 		let cap int
 		cap = dict.cap
-		index = hash % cap
+
+		let d Dict K V
+		d.cap = dict.cap
+
+		index = hash % d.cap
+		// index = hash % dict.cap
 
 		// index = index * sizeof K
 		let curr_key K
@@ -492,7 +497,7 @@ type Dict K V
 		curr_key_ref = dict.keys + scaled_index
 
 		let scaled_cap int
-		scaled_cap = cap * K:size
+		scaled_cap = dict.cap * K:size
 
 		let scaled_inc int
 		scaled_inc = 7 * K:size
@@ -507,10 +512,61 @@ type Dict K V
 			end
 			curr_key_ref = dict.keys + scaled_index
 			if *curr_key_ref == 0
-				break
+				return index
 			end
 		end
-		return index
+		return 0-1  // we dont have unaries yet
+	end
+
+	fn _getref: &Dict K V self, K key -> &V
+		let index int
+		index = Dict K V.index(self, key)
+		if index < 0
+			return 0
+		end
+
+		let scaled_index int
+		scaled_index = index * K:size
+		let key_ptr &K
+
+		key_ptr = self.keys + scaled_index
+		if *key_ptr == 0
+			return 0
+		end
+
+		scaled_index = index * V:size
+		return self.values + scaled_index
+	end
+
+	fn _getitem: &Dict K V self, K key -> V
+		let ptr &V
+		ptr = Dict K V._getref(self, key)
+		if ptr == 0
+			return 0
+		end
+		return *ptr
+	end
+
+	fn _setitem: &Dict K V self, K key, V value
+		let index int
+		index = Dict K V.index(self, key)
+		if index < 0
+			return
+		end
+
+		let scaled_index int
+
+		let key_ptr &K
+		scaled_index = index * K:size
+		key_ptr = self.keys + scaled_index
+		if *key_ptr == 0
+			*key_ptr = key
+		end
+
+		let value_ptr &V
+		scaled_index = index * V:size
+		value_ptr = self.values + scaled_index
+		*value_ptr = value
 	end
 end
 
@@ -531,6 +587,23 @@ fn dictionaries
 	println(str:size)
 	println(&int:size)
 	println(&Dict str int:size)
+
+	Dict str int._setitem(dict, "new key", 5)
+
+	let scaled_index int
+	scaled_index = index * int:size
+	let val_ptr &int
+	val_ptr = dict.values + scaled_index
+
+	val_ptr = &dict["new key"]
+	println(*val_ptr)
+
+	let val int
+	val = dict["new key"]
+	println(val)
+
+	Dict str int._setitem(dict, "new key", 6)
+	println(*val_ptr)
 end
 
 fn main

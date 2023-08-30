@@ -503,6 +503,8 @@ def parse_type(type_str, types) -> Optional[list[Type]]:
 	T = match[1]
 	if T not in types:
 		print(repr(T), 'not in', types)
+		# if T == 'V':
+		# 	err('Forced')
 		return None
 	T = types[T]
 
@@ -874,6 +876,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		if exp.startswith('&'):
 			fn_name = '_getref'
 			exp = exp[1:]
+			idx -= 1
 		else:
 			fn_name = '_getitem'
 
@@ -985,7 +988,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		err(f'No function named {fn_name!r}')
 	else:
 		fn_header = function_headers[fn_name]
-		print('FUNCTIOn', fn_name, fn_header)
+		print('FUNCTION', fn_name, fn_header)
 		caller_type = None
 
 	# use fn_header.typeargs, fn_header.args
@@ -997,6 +1000,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		type_mappings |= dict(
 			zip(caller_type.parent.args, caller_type.args)
 		)
+	print('TYPE MAPPING USING', fn_header.args, 'AND', arg_types)
 	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
 		if arg_type is not UNSPECIFIED_TYPE:
 			curr_mappings = arg_type.match_pattern(type_str, types)
@@ -1004,18 +1008,19 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 			# don't update mappings
 			if len(type_str.split(maxsplit=1)) > 1: continue
 			# We have to expect UNSPECIFIED_TYPE in the for loop
-			curr_mappings = {type_str: UNSPECIFIED_TYPE}
+			curr_mappings = {type_str.lstrip(): UNSPECIFIED_TYPE}
 		else: continue  # parse_type is not None, so it won't change
 
 		for type_arg, matched_type in curr_mappings.items():
 			if type_arg not in type_mappings:
+				print(f'{type_mappings = }')
 				err(f'{type_arg!r} in {type_str} is neither '
 					'an existing type nor a type argument')
 			elif type_mappings[type_arg] in (UNSPECIFIED_TYPE, None):
 				type_mappings[type_arg] = matched_type
 			elif matched_type is ANY_TYPE:
 				type_mappings[type_arg] = matched_type
-			elif type_mappings[type_arg] is not matched_type:
+			elif matched_type not in (type_mappings[type_arg], UNSPECIFIED_TYPE):
 				err('Multiple mappings to same argument. '
 					f'Trying to map {type_arg!r} to '
 					f'{matched_type} and {type_mappings[type_arg]}')
