@@ -1049,7 +1049,8 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 			elif matched_type not in (type_mappings[type_arg], UNSPECIFIED_TYPE):
 				err('Multiple mappings to same argument. '
 					f'Trying to map {type_arg!r} to '
-					f'{matched_type} and {type_mappings[type_arg]}')
+					f'{matched_type} and {type_mappings[type_arg]} '
+					f'{arg_types}')
 
 	# Handles UNSPECIFIED_TYPE
 	for typename, subbed_type in type_mappings.items():
@@ -1691,10 +1692,6 @@ while fn_queue:
 				if dest_type is UNSPECIFIED_TYPE:
 					err(f'Cannot assign to {dest}')
 
-				if ret_type not in (UNSPECIFIED_TYPE, dest_type):
-					err(f'Cannot assign {ret_type} into '
-						f'variable {dest} of {dest_type}')
-
 				if index != -1:
 					first_arg = arg_regs[0]
 					second_arg = arg_regs[1]
@@ -1703,12 +1700,26 @@ while fn_queue:
 					for inst in insts:
 						output(inst.format(dest_reg=first_arg))
 
+					print(f'{dest_clause = }')
 					dest_clause = dest_clause.format(dest_reg=first_arg)
+					output(f'mov {first_arg:{dest_type.size}}, {dest_clause}')
 					# print(f'Moving into {dest_clause!r}')
-					output(f'mov {second_arg:{ret_type.size}}, '
-						f'{Register.a:{ret_type.size}}')
+					ret_size = Type.get_size(ret_type)
+					output(f'mov {second_arg:{ret_size}}, '
+						f'{Register.a:{ret_size}}')
+
+					setitem_result = call_function(f'{dest_type.name}._setitem',
+						[dest_type, ret_type], args_str,
+						variables=fn_instance.variables)
+
+					if setitem_result is not types['void']:
+						err('')
 
 				else:
+					if ret_type not in (UNSPECIFIED_TYPE, dest_type):
+						err(f'Cannot assign {ret_type} into '
+							f'variable {dest} of {dest_type}')
+
 					# the value of the expression is in rax
 					for inst in insts:
 						output(inst.format(dest_reg=Register.b))

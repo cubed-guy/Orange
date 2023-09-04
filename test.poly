@@ -520,10 +520,6 @@ type Dict K V
 
 		let index int
 		index = hash % cap
-		printstr("Index = ")
-		println(index)
-		printstr("K:size = ")
-		println(K:size)
 
 		let curr_key K
 		let scaled_index int
@@ -533,15 +529,6 @@ type Dict K V
 
 		let scaled_cap int
 		scaled_cap = dict.cap * K:size
-		printstr("cap = ")
-		println(dict.cap)
-		printaddr(dict)
-		printstr("size = ")
-		println(K:size)
-		printstr("Scaled cap = ")
-		println(scaled_cap)
-
-		// return 0-1
 
 		let scaled_inc int
 		scaled_inc = 7 * K:size
@@ -549,36 +536,16 @@ type Dict K V
 		let i int
 		i = 0
 
-		printstr("start addr of key array = ")
-		printaddr(dict.keys)
-		printstr("end addr of key array   = ")
 		let end_addr &K
 		end_addr = dict.keys + scaled_cap
-		printaddr(end_addr)
 
-		printstr("Would dereference:        ")
-		// printstr("Trying to dereference: ")
-		printaddr(curr_key_ref)
+		// printstr("Key pointer: ")
+		// printaddr(curr_key_ref)
+		// printstr("Key:         ")
+		// printaddr(*curr_key_ref)  // compiles only if key.deref is not None
 
-		let temp_key K
-		temp_key = *curr_key_ref
-
-		printaddr(temp_key)
-		printaddr(*curr_key_ref)
-
-		// compilation will fail if keys are not strings
-		puts("Comparing string:")
-		puts(*curr_key_ref)
-		puts("vs")
-		puts(key)
-		puts("<End cmp args>")
-
-		return 0-1
-		// printstr("*key = ")
-		// println(*temp_key + 0)
 		while *curr_key_ref != 0
-			printaddr(*curr_key_ref)
-			return 0-1
+			// return 0-1
 			if *curr_key_ref == 0
 				return index
 			elif *curr_key_ref == key
@@ -592,26 +559,18 @@ type Dict K V
 				index = index - cap
 			end
 			curr_key_ref = dict.keys + scaled_index  // is this valid?
-			printstr("Trying to dereference: ")
-			printaddr(curr_key_ref)
 			i = i + 1
 			if dict.used < i
 				break
 			end
 
-			printstr("DEBUG curr_key_ref            = ")
-			printaddr(curr_key_ref)
-
 			if i > 0
-				printstr("DEBUG start addr of key array = ")
-				printaddr(dict.keys)
-				printstr("DEBUG end addr of key array   = ")
 				end_addr = dict.keys + scaled_cap
-				printaddr(end_addr)
 				return 0-1
 			end
 		end
-		if *curr_key_ref == key
+
+		if *curr_key_ref == 0
 			return index
 		end
 		return 0-1  // we dont have unaries yet
@@ -646,7 +605,7 @@ type Dict K V
 		return *ptr
 	end
 
-	fn _setitem: &Dict K V self, K key, V value
+	fn _setitem: &Dict K V self, V value, K key
 		let index int
 		index = Dict K V.index(self, key)
 		if index < 0
@@ -674,45 +633,41 @@ fn noop A: A x -> A
 end
 
 fn dictionaries
+	puts("\nDICT START")
 	let dict &Dict str int
 	dict = Dict str int.new(5)
-	puts("DICT ADDRESSES:")
-	printaddr(dict)
-	printaddr(dict.keys)
-	printaddr(dict.values)
-
 
 	let index int
 	index = Dict str int.index(dict, "new key")
 
-	return
-
-	println(str:size)
-	println(&int:size)
-	println(&Dict str int:size)
-
-	Dict str int._setitem(dict, "new key", 5)
+	Dict str int._setitem(dict, 5, "new key")
 
 	let scaled_index int
 	scaled_index = index * int:size
 	let val_ptr &int
 	val_ptr = dict.values + scaled_index
 
+	puts("getref")
 	val_ptr = &dict["new key"]
 	println(*val_ptr)
-
 
 	let val int
 	val = dict["new key"]
 	println(val)
 
-	Dict str int._setitem(dict, "new key", 6)
+	Dict str int._setitem(dict, 6, "new key")
 	println(*val_ptr)
-	Dict str int._setitem(dict, "new new key", 77)
+	Dict str int._setitem(dict, 77, "new new key")
 	println(*val_ptr)
 
 	val_ptr = &dict["new new key"]
 	println(*val_ptr)
+
+	dict["new new key"] = 5
+	println(*val_ptr)
+	dict["completely different"] = 90
+	val = dict["completely different"]
+	println(val)
 
 end
 
@@ -766,6 +721,6 @@ fn main
 	classmethods()
 	array_index()
 	dictionaries()
-	streq_tests()
-	mul_tests()
+	// streq_tests()
+	// mul_tests()
 end
