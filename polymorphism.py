@@ -80,7 +80,7 @@ class Patterns:
 	@classmethod
 	def through_strings(cls, c):
 		# re pattern objects are atomic, so this should be cheap
-		return cls.re.compile(rf'(?P<pre>(?:([\'"])(?:\\?.)*?\2|.)*?)(?P<target>{c})(?P<post>.*)')
+		return cls.re.compile(rf'(?P<pre>(?:([\'"])(?:\\?.)*?\2|[^\'"])*?)(?P<target>{c})(?P<post>.*)')
 
 	@staticmethod
 	def find_through_strings(s, c, *, start=0):
@@ -357,7 +357,9 @@ class Type:
 						f'Trying to map {token!r} to '
 						f'{expected_type} and {out_mappings[token]}')
 			elif types[token] not in (ANY_TYPE, expected_type.parent):
-				err(f'{expected_type} did not match {token!r} in {type_str!r}')
+				# err(f'{expected_type} did not match {token!r} in {type_str!r}')
+				err(f'Pattern match of {expected_type} failed for '
+					f'{type_str!r} at {token!r}')
 			else:
 				type_queue.extend(expected_type.args)
 			# TODO: append to type_queue
@@ -581,9 +583,12 @@ def parse_token(token: 'stripped', types, *, variables) \
 	else:
 		addr = Address_modes.NONE
 
-	if ':' in token:
-		exp, _, field = token.rpartition(':')
-		field = field.strip()
+	colon_idx = Patterns.find_through_strings(token, ':')
+	dot_idx = Patterns.find_through_strings(token, '.')
+
+	if colon_idx != -1:
+		exp = token[:colon_idx]
+		field = token[colon_idx+1:].strip()
 
 		if field == 'size':
 			type_list = parse_type(exp, types)
@@ -598,7 +603,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 				val = T.size
 			print(f'{T}:size = {val}')
 			T = UNSPECIFIED_TYPE
-		else:  # TODO: type:name, var:type
+		else:  # TODO: type:name, var:type, var:len
 			err(f'Unsupported metadata field {field!r}')
 
 	elif token.isidentifier():
@@ -615,9 +620,9 @@ def parse_token(token: 'stripped', types, *, variables) \
 		else:
 			clause = f'{size_prefix(var.type.size)} [{clause}]'
 
-	elif '.' in token:
-		# if addr: err("Can't take address of variables yet")
-		root, *chain = token.split('.')
+	elif dot_idx != -1:
+		root = token[:dot_idx]
+		chain = token[dot_idx+1:].split('.')
 		root = root.strip()
 		if root not in variables:
 			err(f'{root!r} not defined')
@@ -775,10 +780,10 @@ def parse_token(token: 'stripped', types, *, variables) \
 		insts = [
 			# *o_insts,  # too complex if not empty
 			# *insts,  # always empty. Actually, no:
-			*(
-				insts or
-				(f'mov {{dest_reg:{Type.get_size(T)}}}, {clause}',)
-			),
+			*insts,
+
+			*(() if clause is None else
+				(f'mov {{dest_reg:{Type.get_size(T)}}}, {clause}',)),
 
 			*get_operator_insts(operator, o_clause, o_type)
 		]
@@ -904,7 +909,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 			fn_deref = False
 		arg_types = []
 
-	ret_type = call_function(fn_name, arg_types, exp, idx, variables=variables)
+	ret_type = call_function(fn_name, arg_types, exp[idx:], variables=variables)
 
 	print(f'{dest_reg = }')
 	if dest_reg is Flag:
@@ -919,18 +924,21 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 	return ret_type
 
 
-def call_function(fn_name, arg_types, exp, idx, *, variables):
+# args_str must include the starting bracket
+# args_str = '(arg1, arg2)', but not 'arg, arg2)'
+def call_function(fn_name, arg_types, args_str, *, variables):
 	if fn_name == 'alloc':
 		alloc_type = None
 		alloc_fac  = None
 
+	idx = 0
 	while idx != -1:
 		if len(arg_types) >= len(arg_regs):
 			err('Only upto 4 arguments are allowed')
 		arg_reg = arg_regs[len(arg_types)]
 
-		end = Patterns.find_through_strings(exp, ',', start=idx+1)
-		arg = exp[idx+1:end].strip()
+		end = Patterns.find_through_strings(args_str, ',', start=idx+1)
+		arg = args_str[idx+1:end].strip()
 
 		idx = end
 		if not arg and idx == -1: break
@@ -1119,6 +1127,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 		size = Type.get_size(operand_type)
 		return [
 			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
+			f'xor rdx, rdx',
 			f'mov {Register.b:{size}}, {operand_clause}',
 			f'mul {Register.b:{size}}',
 			f'mov {{dest_reg:{size}}}, {Register.a:{size}}'
@@ -1164,16 +1173,11 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 			f'{l_type} and {r_type}')
 
 	if types['str'] in [l_type, r_type]:
-		# r==l and o not in (==, !=) or o not in ('+', '-', '==', '!=')
-		# e & ~(== | !=) | ~(+ | - | == | !=)
-		# e & ~== & ~!= | ~+ & ~- & ~== & ~!=
-		# (e | ~+ & ~-) & ~== & ~!=
-		# (e | ~(+ | -)) & ~(== | !=)
-		# (r==l or o not in ('+', '-')) and o not in ('==', '!=')
-		if (
-			(operator not in ('+', '-') or r_type is l_type)
-			and operator not in ('==', '!=')
-		):
+		if r_type is l_type or UNSPECIFIED_TYPE in [l_type, r_type]:
+			if operator == '==': return Flag.e
+			if operator == '!=': return Flag.ne
+
+		if r_type is l_type or operator not in ('+', '-'):
 			err(f'Unsupported operator {operator!r} between '
 				f'{l_type} and {r_type}')
 		return types['str']
@@ -1631,6 +1635,7 @@ while fn_queue:
 				break
 			else:  # ctrl.branch is an integer
 				output(f'_E{ctrl.ctrl_no}_{ctrl.branch+1}:')
+				output(f'_END{ctrl.ctrl_no}:')
 
 		elif match[1] == 'break':
 			for ctrl in reversed(ctrl_stack):
@@ -1659,16 +1664,26 @@ while fn_queue:
 			if match:
 				exp = match['post'].strip()
 				dest = match['pre'].strip()
+				print(f'{exp = }; {dest = }; {match[2] = }')
 			else:
 				exp = line
 				dest = None
+
 
 			ret_type = parse_exp(exp.strip(),
 				dest_reg = Register.a, fn_queue = fn_queue,
 				variables = fn_instance.variables)
 
 			if dest is not None:
-				insts, dest_clause, dest_type = parse_token(dest, fn_types,
+				index = Patterns.find_through_strings(dest, '[')
+
+				if index != -1:
+					dest_token = dest[:index]
+					args_str = dest[index:].strip()
+				else:
+					dest_token = dest
+
+				insts, dest_clause, dest_type = parse_token(dest_token, fn_types,
 					variables = fn_instance.variables)
 
 				if not dest_clause: err('Destination too complex')
@@ -1680,13 +1695,28 @@ while fn_queue:
 					err(f'Cannot assign {ret_type} into '
 						f'variable {dest} of {dest_type}')
 
-				# the value of the expression is in rax
-				for inst in insts:
-					output(inst.format(dest_reg=Register.b))
+				if index != -1:
+					first_arg = arg_regs[0]
+					second_arg = arg_regs[1]
 
-				dest_clause = dest_clause.format(dest_reg=Register.b)
-				# print(f'Moving into {dest_clause!r}')
-				output(f'mov {dest_clause}, {Register.a:{dest_type.size}}')
+					# the value of the expression is in rax
+					for inst in insts:
+						output(inst.format(dest_reg=first_arg))
+
+					dest_clause = dest_clause.format(dest_reg=first_arg)
+					# print(f'Moving into {dest_clause!r}')
+					output(f'mov {second_arg:{ret_type.size}}, '
+						f'{Register.a:{ret_type.size}}')
+
+				else:
+					# the value of the expression is in rax
+					for inst in insts:
+						output(inst.format(dest_reg=Register.b))
+
+					dest_clause = dest_clause.format(dest_reg=Register.b)
+					# print(f'Moving into {dest_clause!r}')
+					output(f'mov {dest_clause}, {Register.a:{dest_type.size}}')
+
 
 			output()
 

@@ -215,6 +215,14 @@ fn control_flow
 	else
 		puts("THREE")
 	end
+
+	x = 0
+	if x == 1
+		puts("ONE")
+	elif x == 0
+		puts("ZERO")
+	end
+
 end
 
 fn dereffer T: &T x -> T
@@ -467,29 +475,56 @@ type Dict K V
 		out = alloc(Dict K V)
 
 		out.cap = cap
-		out.keys = alloc(K, cap)
-		out.values = alloc(V, cap)
 		out.used = 0
+
+		let i int
+
+		out.keys = alloc(K, cap)
+		printstr("out.keys = ")
+		printaddr(out.keys)
+		printstr("cap = ")
+		println(cap)
+		let key_ptr &K
+		key_ptr = out.keys
+		i = 0
+		while i < cap
+			*key_ptr = 0
+			key_ptr = key_ptr + K:size
+			i = i + 1
+		end
+
+		out.values = alloc(V, cap)
+		let val_ptr &K
+		val_ptr = out.keys
+		i = 0
+		while i < cap
+			*val_ptr = 0
+			val_ptr = val_ptr + V:size
+			i = i + 1
+		end
+
 
 		return out
 	end
 
 	fn index: &Dict K V dict, K key -> int
+		if dict == 0
+			return 0-1
+		end
+
 		let hash int
 		hash = K.hash(key)
-
-		let index int
 
 		let cap int
 		cap = dict.cap
 
-		let d Dict K V
-		d.cap = dict.cap
+		let index int
+		index = hash % cap
+		printstr("Index = ")
+		println(index)
+		printstr("K:size = ")
+		println(K:size)
 
-		index = hash % d.cap
-		// index = hash % dict.cap
-
-		// index = index * sizeof K
 		let curr_key K
 		let scaled_index int
 		scaled_index = index * K:size
@@ -498,22 +533,86 @@ type Dict K V
 
 		let scaled_cap int
 		scaled_cap = dict.cap * K:size
+		printstr("cap = ")
+		println(dict.cap)
+		printaddr(dict)
+		printstr("size = ")
+		println(K:size)
+		printstr("Scaled cap = ")
+		println(scaled_cap)
+
+		// return 0-1
 
 		let scaled_inc int
 		scaled_inc = 7 * K:size
 
-		// we may need _eq and _ne along with _setitem
-		while *curr_key_ref != key
+		let i int
+		i = 0
+
+		printstr("start addr of key array = ")
+		printaddr(dict.keys)
+		printstr("end addr of key array   = ")
+		let end_addr &K
+		end_addr = dict.keys + scaled_cap
+		printaddr(end_addr)
+
+		printstr("Would dereference:        ")
+		// printstr("Trying to dereference: ")
+		printaddr(curr_key_ref)
+
+		let temp_key K
+		temp_key = *curr_key_ref
+
+		printaddr(temp_key)
+		printaddr(*curr_key_ref)
+
+		// compilation will fail if keys are not strings
+		puts("Comparing string:")
+		puts(*curr_key_ref)
+		puts("vs")
+		puts(key)
+		puts("<End cmp args>")
+
+		return 0-1
+		// printstr("*key = ")
+		// println(*temp_key + 0)
+		while *curr_key_ref != 0
+			printaddr(*curr_key_ref)
+			return 0-1
+			if *curr_key_ref == 0
+				return index
+			elif *curr_key_ref == key
+				return index
+			end
+
 			scaled_index = scaled_index + scaled_inc
 			index = index + K:size
-			if scaled_index > scaled_cap
+			if scaled_index >= scaled_cap
 				scaled_index = scaled_index - scaled_cap
 				index = index - cap
 			end
-			curr_key_ref = dict.keys + scaled_index
-			if *curr_key_ref == 0
-				return index
+			curr_key_ref = dict.keys + scaled_index  // is this valid?
+			printstr("Trying to dereference: ")
+			printaddr(curr_key_ref)
+			i = i + 1
+			if dict.used < i
+				break
 			end
+
+			printstr("DEBUG curr_key_ref            = ")
+			printaddr(curr_key_ref)
+
+			if i > 0
+				printstr("DEBUG start addr of key array = ")
+				printaddr(dict.keys)
+				printstr("DEBUG end addr of key array   = ")
+				end_addr = dict.keys + scaled_cap
+				printaddr(end_addr)
+				return 0-1
+			end
+		end
+		if *curr_key_ref == key
+			return index
 		end
 		return 0-1  // we dont have unaries yet
 	end
@@ -577,12 +676,16 @@ end
 fn dictionaries
 	let dict &Dict str int
 	dict = Dict str int.new(5)
+	puts("DICT ADDRESSES:")
 	printaddr(dict)
 	printaddr(dict.keys)
 	printaddr(dict.values)
 
+
 	let index int
 	index = Dict str int.index(dict, "new key")
+
+	return
 
 	println(str:size)
 	println(&int:size)
@@ -598,12 +701,58 @@ fn dictionaries
 	val_ptr = &dict["new key"]
 	println(*val_ptr)
 
+
 	let val int
 	val = dict["new key"]
 	println(val)
 
 	Dict str int._setitem(dict, "new key", 6)
 	println(*val_ptr)
+	Dict str int._setitem(dict, "new new key", 77)
+	println(*val_ptr)
+
+	val_ptr = &dict["new new key"]
+	println(*val_ptr)
+
+end
+
+fn streq_tests
+	puts("streq tests are running")
+
+	if "hi" == "Hello"
+		puts("hi and hello are same")
+	end
+
+	if "hi" == "hi"
+		puts("hi and hi are same")
+	end
+
+	if "hi" != "Hello"
+		puts("hi and hello are different")
+	end
+
+	if "hi" != "hi"
+		puts("hi and hi are different")
+	end
+end
+
+fn mul_tests
+	println(2 * 4)
+	let x int
+	let y int
+	x = 2
+	y = 4
+	println(x * y)
+	println(x * Dict int int:size)
+
+	let z int
+	z = mul_sub(x, y)
+	println(z)
+end
+
+fn mul_sub: int x, int y -> int
+	println(x * y)
+	return x * y
 end
 
 fn main
@@ -617,4 +766,6 @@ fn main
 	classmethods()
 	array_index()
 	dictionaries()
+	streq_tests()
+	mul_tests()
 end
