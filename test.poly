@@ -607,7 +607,7 @@ end
 fn dictionaries
 	puts("\nDICT START")
 	let dict &Dict str int
-	dict = Dict str int.new(1199)
+	dict = Dict str int.new(1193)
 
 	let index int
 	index = Dict str int.index(dict, "new key")
@@ -703,6 +703,30 @@ fn mul_sub: int x, int y -> int
 	return x * y
 end
 
+type print_meta_wrapper A
+	fn print
+		puts(A:name)
+	end
+end
+
+fn more_meta
+	puts("MORE META")
+
+	let x int
+	let y x:type
+
+	y = 9
+	x = y
+	println(x)
+
+	puts(x:type)
+	puts(y:type)
+
+	print_meta_wrapper &Dict int int.print()
+	print_meta_wrapper &Dict str int.print()
+
+end
+
 fn main
 	basics()
 	operations()
@@ -714,6 +738,7 @@ fn main
 	classmethods()
 	array_index()
 	dictionaries()
-	// streq_tests()
-	// mul_tests()
+	streq_tests()
+	mul_tests()
+	more_meta()
 end
