@@ -1020,6 +1020,14 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 	# use fn_header.typeargs, fn_header.args
 	# We could store {typename: Type}, but rn we have {typename: typename}
 
+	if len(arg_types) != len(fn_header.args):
+		fl = len(fn_header.args)
+		al = len(arg_types)
+
+		err(f'{fn_header.name!r} expects exactly '
+			f'{fl} argument{"s" * (fl != 1)}, '
+			f'but {al} {"were" if al != 1 else "was"} provided')
+
 	# Populate type_mappings
 	type_mappings = {T: None for T in fn_header.typeargs}
 	if caller_type is not None:

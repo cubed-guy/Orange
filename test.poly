@@ -480,10 +480,10 @@ type Dict K V
 		let i int
 
 		out.keys = alloc(K, cap)
-		printstr("out.keys = ")
-		printaddr(out.keys)
-		printstr("cap = ")
-		println(cap)
+		// printstr("out.keys = ")
+		// printaddr(out.keys)
+		// printstr("cap = ")
+		// println(cap)
 		let key_ptr &K
 		key_ptr = out.keys
 		i = 0
@@ -663,12 +663,33 @@ fn dictionaries
 	val_ptr = &dict["new new key"]
 	println(*val_ptr)
 
+	puts("new new key")
 	dict["new new key"] = 5
 	println(*val_ptr)
+	printaddr(val_ptr)
+	printaddr(dict.values)
+
+	index = Dict str int.index(dict, "new new key")
+	printstr("index = ")
+	println(index)
+
 	dict["completely different"] = 90
 	val = dict["completely different"]
 	println(val)
 
+	val = dict["new new key"]
+	println(val)
+
+	dict["new new key"] = dict["completely different"]
+	val = dict["new new key"]
+	println(val)
+	println(*val_ptr)
+	val_ptr = &dict["new new key"]
+
+	printaddr(val_ptr)
+	index = Dict str int.index(dict, "new new key")
+	printstr("index = ")
+	println(index)
 end
 
 fn streq_tests
