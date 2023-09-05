@@ -463,10 +463,31 @@ fn array_index
 	
 end
 
+type Arr T  // wrapper around pointers to get scaled indices
+	let ptr &T
+	fn _getref: Arr T self, int index -> &T
+		let scaled_index int
+		scaled_index = index * T:size
+		return self.ptr + scaled_index
+	end
+
+	fn _getitem: Arr T self, int index -> T
+		let val_ptr &T
+		val_ptr = &self[index]
+		return *val_ptr
+	end
+
+	fn _setitem: Arr T self, T value, int index
+		let val_ptr &T
+		val_ptr = &self[index]
+		*val_ptr = value
+	end
+end
+
 type Dict K V
 	let cap int
-	let keys &K
-	let values &V
+	let keys Arr K
+	let values Arr V
 	let used int
 
 	// So, this is a constructor? And it works? And it's in my language? Crazy!
@@ -475,34 +496,17 @@ type Dict K V
 		out = alloc(Dict K V)
 
 		out.cap = cap
+		out.keys.ptr = alloc(K, cap)
+		out.values.ptr = alloc(V, cap)
 		out.used = 0
 
 		let i int
-
-		out.keys = alloc(K, cap)
-		// printstr("out.keys = ")
-		// printaddr(out.keys)
-		// printstr("cap = ")
-		// println(cap)
-		let key_ptr &K
-		key_ptr = out.keys
 		i = 0
 		while i < cap
-			*key_ptr = 0
-			key_ptr = key_ptr + K:size
+			out.keys[i] = 0
+			out.values[i] = 0
 			i = i + 1
 		end
-
-		out.values = alloc(V, cap)
-		let val_ptr &K
-		val_ptr = out.keys
-		i = 0
-		while i < cap
-			*val_ptr = 0
-			val_ptr = val_ptr + V:size
-			i = i + 1
-		end
-
 
 		return out
 	end
@@ -521,59 +525,35 @@ type Dict K V
 		let index int
 		index = hash % cap
 
-		let curr_key K
-		let scaled_index int
-		scaled_index = index * K:size
-		let curr_key_ref &K
-		curr_key_ref = dict.keys + scaled_index
-
-		let scaled_cap int
-		scaled_cap = dict.cap * K:size
-
-		let scaled_inc int
-		scaled_inc = 7 * K:size
-
 		let i int
 		i = 0
-
-		let end_addr &K
-		end_addr = dict.keys + scaled_cap
 
 		// printstr("Key pointer: ")
 		// printaddr(curr_key_ref)
 		// printstr("Key:         ")
 		// printaddr(*curr_key_ref)  // compiles only if key.deref is not None
 
-		while *curr_key_ref != 0
-			// return 0-1
-			if *curr_key_ref == 0
-				return index
-			elif *curr_key_ref == key
+		let curr_key K
+		curr_key = dict.keys[index]
+
+		// return -1 only if there's no more space
+		while curr_key != 0
+			if curr_key == key
 				return index
 			end
 
-			scaled_index = scaled_index + scaled_inc
-			index = index + K:size
-			if scaled_index >= scaled_cap
-				scaled_index = scaled_index - scaled_cap
-				index = index - cap
+			index = index + 7
+			if index >= cap
+				index = index % cap
 			end
-			curr_key_ref = dict.keys + scaled_index  // is this valid?
+			curr_key = dict.keys[index]
+
 			i = i + 1
 			if dict.used < i
-				break
-			end
-
-			if i > 0
-				end_addr = dict.keys + scaled_cap
 				return 0-1
 			end
 		end
-
-		if *curr_key_ref == 0
-			return index
-		end
-		return 0-1  // we dont have unaries yet
+		return index
 	end
 
 	fn _getref: &Dict K V self, K key -> &V
@@ -583,22 +563,17 @@ type Dict K V
 			return 0
 		end
 
-		let scaled_index int
-		scaled_index = index * K:size
-		let key_ptr &K
-
-		key_ptr = self.keys + scaled_index
-		if *key_ptr == 0
+		key = self.keys[index]
+		if key == 0
 			return 0
 		end
 
-		scaled_index = index * V:size
-		return self.values + scaled_index
+		return &self.values[index]
 	end
 
 	fn _getitem: &Dict K V self, K key -> V
 		let ptr &V
-		ptr = Dict K V._getref(self, key)
+		ptr = &self[key]
 		if ptr == 0
 			return 0
 		end
@@ -615,16 +590,13 @@ type Dict K V
 		let scaled_index int
 
 		let key_ptr &K
-		scaled_index = index * K:size
-		key_ptr = self.keys + scaled_index
+		key_ptr = &self.keys[index]
 		if *key_ptr == 0
 			*key_ptr = key
+			self.used = self.used + 1
 		end
 
-		let value_ptr &V
-		scaled_index = index * V:size
-		value_ptr = self.values + scaled_index
-		*value_ptr = value
+		self.values[index] = value
 	end
 end
 
@@ -635,7 +607,7 @@ end
 fn dictionaries
 	puts("\nDICT START")
 	let dict &Dict str int
-	dict = Dict str int.new(5)
+	dict = Dict str int.new(1199)
 
 	let index int
 	index = Dict str int.index(dict, "new key")
@@ -645,7 +617,7 @@ fn dictionaries
 	let scaled_index int
 	scaled_index = index * int:size
 	let val_ptr &int
-	val_ptr = dict.values + scaled_index
+	val_ptr = dict.values.ptr + scaled_index
 
 	puts("getref")
 	val_ptr = &dict["new key"]
@@ -667,7 +639,7 @@ fn dictionaries
 	dict["new new key"] = 5
 	println(*val_ptr)
 	printaddr(val_ptr)
-	printaddr(dict.values)
+	printaddr(dict.values.ptr)
 
 	index = Dict str int.index(dict, "new new key")
 	printstr("index = ")

@@ -1206,12 +1206,19 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 		if None not in (l_type.deref, r_type.deref):
 			err('Cannot add pointers')
 
+	# account for custom types
+	if operator == '==': return Flag.e
+	if operator == '!=': return Flag.ne
+
+	if l_type not in builtin_types:
+		err(f'Cannot use operator {operator!r} on custom type {l_type}')
+	if r_type not in builtin_types:
+		err(f'Cannot use operator {operator!r} on custom type {r_type}')
+
 	if operator == '>':  return Flag.g
 	if operator == '<':  return Flag.l
 	if operator == '>=': return Flag.ge
 	if operator == '<=': return Flag.le
-	if operator == '==': return Flag.e
-	if operator == '!=': return Flag.ne
 
 	if UNSPECIFIED_TYPE in (l_type, r_type):
 		return UNSPECIFIED_TYPE
@@ -1236,6 +1243,8 @@ types = {
 }
 ANY_TYPE = types['any']
 types['str'].deref = types['char']
+
+builtin_types = {*types.copy().values(), UNSPECIFIED_TYPE, FLAG_TYPE}
 
 # Builtins
 # Function_header(name, type_args, *args(type, name), ret_type, tell, line_no)
