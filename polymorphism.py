@@ -19,9 +19,11 @@ from sys import argv
 from enum import Enum, auto
 from enum import Flag as Enum_flag
 from typing import Union, Optional
+from os import system
 
 class Shared:
 	debug = True
+	assemble = False
 	line = '[DEBUG] ** Empty line **'
 	line_no = 0
 
@@ -33,6 +35,8 @@ if __name__ != '__main__': Shared.debug = True
 elif '-d' in argv: Shared.debug = True; argv.remove('-d')
 else: Shared.debug = False
 Shared.debug = True
+
+if '-a' in argv: Shared.assemble = True; argv.remove('-a')
 
 WIN64, ELF64, *_ = range(4)
 PTR_SIZE = 8
@@ -49,8 +53,8 @@ crlf = int(arch == WIN64)
 if len(argv) <2:
 	if Shared.debug: argv.append('test.poly')
 	else: print('Input file not specified'); quit(1)
-name = argv[1].rpartition('.')[0]
-if len(argv)<3: argv.append(name+'.asm')
+file_name = argv[1].rpartition('.')[0]
+if len(argv)<3: argv.append(file_name+'.asm')
 
 Shared.infile = open(argv[1])
 Shared.out = open(argv[2], 'w')
@@ -196,22 +200,25 @@ class Function_header:
 				err(f'Invalid syntax {" ".join(arg_entry)!r}. '
 					'Expected exactly 2 words for arg entry.')
 
-	def add_sub(self, key: tuple[str], typeargs = ()) -> 'Function_instance':
+	def add_sub(
+		self, key: tuple[str], typeargs = (), *, isextern=False
+	) -> 'Function_instance':
 		# Need to initialise arguments as variables
 		if len(key) != len(self.typeargs):
 			err(f'Expected {len(self.typeargs)} type arguments '
 				f'to {self.name!r}. Got {len(key)}')
 
 		fn_instance = Function_instance(
-			self, typeargs, len(self.instances)
+			self, typeargs, len(self.instances), isextern
 		)
 		self.instances[key] = fn_instance
 		return fn_instance
 
 class Function_instance:
-	def __init__(self, template, typeargs: list[str], id):
+	def __init__(self, template, typeargs: list[str], id, isextern):
 		self.template = template
 		self.id = id
+		self.isextern = isextern
 		self.type_mappings = dict(zip(template.typeargs, typeargs))
 		self.variables = {}
 		self.offset = 0
@@ -238,6 +245,7 @@ class Function_instance:
 			)
 
 	def mangle(self):
+		if self.isextern: return self.template.name
 		return f'_{self.id}{self.template.name}'
 
 class Variable:  # Instantiated when types are known
@@ -283,6 +291,9 @@ class Type:
 
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		global types
+
+		if self.parent is not self:
+			return self
 
 		if len(args) != len(self.args):
 			err(f'{self} expects {len(self.args)} polymorphic arguments. '
@@ -1449,6 +1460,38 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 		elif scope_level == 0:
 			in_function = False
 
+	elif match[1] == 'extern':  # gets added to be linked
+		# syntax extern name: type arg -> ret
+
+		if scope_level:
+			err('Local functions are not supported')
+
+		# name typeargs : type arg, comma separated
+		pre, arrow, ret_type = match[2].partition('->')
+		pre, _, args = pre.partition(':')
+		name, *typeargs = pre.split()
+		args = args.strip()
+		args = args.split(',')
+		if args[-1] == '': args.pop()
+
+		if not arrow: ret_type = 'void'
+		else: ret_type = ret_type.strip()
+
+		# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
+
+		if name in function_headers:
+			err(f'Function {name!r} already defined.')
+
+		fn = Function_header(
+			name, (*typeargs,), tuple(arg.rsplit(maxsplit=1) for arg in args),
+			ret_type, tell, Shared.line_no
+		)
+		print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+		function_headers[name] = fn
+
+		fn.add_sub((), isextern=True)
+		output('extern', name)
+
 if not fn_queue:
 	err("No definition of function 'main' found.")
 
@@ -1618,8 +1661,6 @@ while fn_queue:
 				dest_reg = Flag, fn_queue = fn_queue,
 				variables = fn_instance.variables
 			)
-
-
 
 			if ret_flag is Flag.ALWAYS:
 				output(f'jmp _E{ctrl_no}')
@@ -1807,3 +1848,12 @@ _paddr: db `%p\n`, 0
 for string, label in strings.items():
 	encoded_string = repr(string)[2:-1].replace('`', '\\`')
 	output(f'{label}: db `{encoded_string}`, 0')
+
+Shared.out.close()
+
+if Shared.assemble:
+	result = system(' && '.join((
+		f"nasm \"{Shared.out.name}\" -f win64 -o \"{file_name}.o\"",
+		f"gcc \"{file_name}.o\" -o \"{file_name}.exe\""
+	)))
+	print('Linking result =', result)
