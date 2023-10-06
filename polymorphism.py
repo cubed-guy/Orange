@@ -115,6 +115,9 @@ class Patterns:
 				if not slashes&1: start = l; break
 				j -= 1
 
+class ParseTypeError(ValueError):
+	pass
+
 output(r'''
 global main
 extern printf
@@ -246,13 +249,13 @@ class Function_instance:
 					f'{self.template.name!r}')
 
 			# TODO: update variables
-			type_list = parse_type(typename, local_types, variables={})
-			if type_list is None:
+			parse_type_result = parse_type(typename, local_types, variables={})
+			if isinstance(parse_type_result, ParseTypeError):
 				# TODO: better message
-				err(f'Type {typename!r} is not available')
-			if len(type_list) != 1:
+				err(f'In {typename!r}, ' + parse_type_result.__str__())
+			if len(parse_type_result) != 1:
 				err('Type expression must evaluate to exactly one type')
-			T, = type_list
+			T, = parse_type_result
 
 			self.offset += T.size
 			self.variables[argname] = Variable(
@@ -337,10 +340,12 @@ class Type:
 			T = field.type
 			if isinstance(T, str):
 				# TODO: update variables
-				type_list = parse_type(T, instance_types, variables={})
-				if len(type_list) != 1:
+				parse_type_result = parse_type(T, instance_types, variables={})
+				if isinstance(parse_type_result, ParseTypeError):
+					err(f'In {T!r}, ' + parse_type_result.__str__())
+				if len(parse_type_result) != 1:
 					err('Declaration requires exactly one type')
-				T, = type_list
+				T, = parse_type_result
 
 			print(f'Added field {name!r} of {T} to instance')
 			field = Variable(name, instance.size, T, field.decl_line_no)
@@ -516,43 +521,51 @@ def size_prefix(size):
 		return 'qword'
 	err(f'[Internal error] Invalid size {size} for getting size prefix')
 
-def parse_type(type_str, types, *, variables) -> Optional[list[Type]]:
+def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeError]:
 	# DONE: add pointer support
 
-	if not type_str:
-		return []
+	print(f'IN PARSETYPE: {type_str = }')
 	if type_str.startswith('&'):
 		type_str = type_str[1:].strip()
 		pointer = True
 	else:
 		pointer = False
 
-	match = Patterns.split_word.match(type_str.lstrip())
-	print(f'PARSE TYPE {type_str!r} -> {match[1]!r} {match[2]!r}')
+	type_tokens = type_str.split(maxsplit=1)
 
-	T = match[1]
+	if not type_tokens:
+		return []
 
-	if match[2].startswith(':'):
-		match = Patterns.split_word.match(match[2][1:].lstrip())
+	root_token = type_tokens[0]
 
-		field = match[1]
+	print(f'PARSE TYPE {type_str!r} -> {type_tokens}')
+
+	token, _, field = root_token.rpartition(':')
+	if token:
+		print(f'Type meta:  {token = }, {field = }')
+
 		if field == 'type':
-			_insts, _clause, exp_type = parse_token(T, types,
-				variables=variables)
+			_insts, _clause, exp_type = parse_token(token, types,
+				variables=variables, virtual=True)
 		else:
 			err('Unsupported metadata field. '
 				f"':{field}' does not yield a type.")
 		T = exp_type
-	elif T not in types:
-		print(repr(T), 'not in', types)
-		# if T == 'V':
-		# 	err('Forced')
-		return None
+		if T is UNSPECIFIED_TYPE:
+			T = INT_TYPE
 	else:
-		T = types[T]
+		T = field
+		if T not in types:
+			print(repr(T), 'not in', types)
+			return ParseTypeError(f'{T!r} is not defined')
+		else:
+			T = types[T]
 
-	args = parse_type(match[2].lstrip(), types, variables=variables)
-	if args is None: return None
+	if len(type_tokens) > 1:
+		args = parse_type(type_tokens[1], types, variables=variables)
+		if isinstance(args, ParseTypeError): return args
+	else:
+		args = []
 
 	if T.args is None:
 		return [T] + args
@@ -634,15 +647,15 @@ def parse_token(token: 'stripped', types, *, variables) \
 		print(f'Token meta: {exp = }, {field = }')
 
 		if field == 'size':
-			type_list = parse_type(exp, types, variables=fn_instance.variables)
-			if type_list is None:
-				err(f'Type {exp!r} not available')
+			parse_type_result = parse_type(exp, types, variables=fn_instance.variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, ' + parse_type_result.__str__())
 			if addr is Address_modes.ADDRESS:
 				val = PTR_SIZE
 			else:
-				if len(type_list) != 1:
+				if len(parse_type_result) != 1:
 					err(f'{exp!r} does not correspond to a single type')
-				T, = type_list
+				T, = parse_type_result
 				val = T.size
 			print(f'{T}:size = {val}')
 			T = UNSPECIFIED_TYPE
@@ -655,13 +668,13 @@ def parse_token(token: 'stripped', types, *, variables) \
 			T = types['str']
 
 		elif field == 'name':
-			type_list = parse_type(exp, types, variables=fn_instance.variables)
-			if type_list is None:
-				err(f'Type {exp!r} not available')
-			if len(type_list) != 1:
+			parse_type_result = parse_type(exp, types, variables=fn_instance.variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, ' + parse_type_result.__str__())
+			if len(parse_type_result) != 1:
 				# NOTE: I would 
 				err(f'{exp!r} does not correspond to a single type')
-			T, = type_list
+			T, = parse_type_result
 
 			string = bytes(T.name, 'utf-8')
 			clause = get_string_label(string, strings)
@@ -1005,15 +1018,15 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		if fn_name == 'alloc':
 			# doesn't work if only one argument is provided. Should work.
 			if alloc_type is None:
-				type_list = parse_type(arg, fn_types, variables=variables)
+				parse_type_result = parse_type(arg, fn_types, variables=variables)
 
 
-				if type_list is None:
-					err(f'Type not found in {arg}')
-				if len(type_list) != 1:
+				if isinstance(parse_type_result, ParseTypeError):
+					err(f'In {arg!r}, ' + parse_type_result.__str__())
+				if len(parse_type_result) != 1:
 					err('Expected exactly one type in alloc()')
 
-				alloc_type, = type_list
+				alloc_type, = parse_type_result
 				# if alloc_type is ANY_TYPE:
 				# 	err(f'{alloc_type} has no associated size')
 				alloc_fac = alloc_type.size
@@ -1043,12 +1056,12 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 	caller_type_name, dot, fn_name = fn_name.rpartition('.')
 
 	if dot:
-		type_list = parse_type(caller_type_name, fn_types, variables=variables)
-		if type_list is None:
-			err(f'Type {caller_type_name!r} is not available')
-		if len(type_list) != 1:
+		parse_type_result = parse_type(caller_type_name, fn_types, variables=variables)
+		if isinstance(parse_type_result, ParseTypeError):
+			err(f'In {caller_type_name!r}, ' + parse_type_result.__str__())
+		if len(parse_type_result) != 1:
 			err('Method calls expect exactly one type')
-		caller_type, = type_list
+		caller_type, = parse_type_result
 		# if caller_type.deref is not None:
 		# 	caller_type = caller_type.deref
 
@@ -1552,10 +1565,12 @@ while fn_queue:
 				err(f'Variable {name!r} already declared in '
 					f'line {var.decl_line_no}')
 
-			type_list = parse_type(type_str.lstrip(), fn_types,
+			print(f'{type_str = }')
+			parse_type_result = parse_type(type_str.lstrip(), fn_types,
 				variables=fn_instance.variables)
-			if type_list is None:
-				err(f'A type in {type_str!r} is not defined')
+			print('EXIT PARSETYPE')
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'[in {type_str.lstrip()!r}] ' + parse_type_result.__str__())
 				# one of the arguments in T is polymorphic
 				# DRY this up maybe
 				# match = Patterns.split_word.match(type_str)
@@ -1567,8 +1582,8 @@ while fn_queue:
 				# 	T = fn_types[match[1]]
 				# T.get_instance(tuple(parse_type(match[2])))
 
-			print(f'Declaration type list of {type_str!r}: {type_list}')
-			T, = type_list
+			print(f'Declaration type list of {type_str!r}: {parse_type_result}')
+			T, = parse_type_result
 
 			if T is ANY_TYPE:
 				err("A variable of type 'any' must be a pointer")
