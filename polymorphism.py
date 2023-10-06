@@ -1889,8 +1889,10 @@ for string, label in strings.items():
 Shared.out.close()
 
 if Shared.assemble:
-	result = system(' && '.join((
+	cmd = ' && '.join((
 		f"nasm \"{Shared.out.name}\" -f win64 -o \"{file_name}.o\"",
-		f"gcc \"{file_name}.o\" -o \"{file_name}.exe\""
-	)))
+		f"gcc-asm \"{file_name}.o\" -o \"{file_name}.exe\""
+	))
+	result = system(cmd)
+	print('Assembling using', repr(cmd))
 	print('Linking result =', result)
