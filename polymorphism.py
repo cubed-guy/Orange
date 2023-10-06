@@ -8,10 +8,12 @@
 # DONE: user-defined types
 # DONE: type pattern matching
 # DONE: classmethods
-# TODO: array deref syntax
-# TODO: array assignment syntax
-# TODO: a (better) way to cast variables
-# TODO: arrays
+# DONE: array deref syntax
+# DONE: array assignment syntax
+# TODO: a (better) way to cast variables, Exposed T, Self
+# TODO: modules, import, nested typedef
+# TODO: arrays, dictionaries, std
+# TODO: SoA
 # TODO: constants
 # TODO: check non-void return
 
@@ -90,15 +92,28 @@ class Patterns:
 	def find_through_strings(s, c, *, start=0):
 		while 1:
 			i = s.find(c, start)
-			j = s.find('"', start)
-			if j == -1 or j > i: return i
+			j = s.find('"', start, i)
+			if j == -1: return i
 			j += 1
 			while 1:
 				j = s.find('"', j)
 				k = j - len(s[:j].rstrip('\\'))
-				if k&1 == 0: start = j+1; break
+				if not k&1: start = j+1; break
 				j += 1
 
+	@staticmethod
+	def rfind_through_strings(s, c, *, start=None):
+		while 1:
+			i = s.rfind(c, 0, start)
+			j = s.rfind('"', i, start)
+			if j == -1: return i
+			j -= 1
+			while 1:
+				j = s.rfind('"', 0, j)
+				l = len(s[:j].rstrip('\\'))
+				slashes = j - l
+				if not slashes&1: start = l; break
+				j -= 1
 
 output(r'''
 global main
@@ -525,7 +540,8 @@ def parse_type(type_str, types, *, variables) -> Optional[list[Type]]:
 			_insts, _clause, exp_type = parse_token(T, types,
 				variables=variables)
 		else:
-			err(f'Unsupported metadata field {field!r} for type')
+			err('Unsupported metadata field. '
+				f"':{field}' does not yield a type.")
 		T = exp_type
 	elif T not in types:
 		print(repr(T), 'not in', types)
@@ -539,7 +555,7 @@ def parse_type(type_str, types, *, variables) -> Optional[list[Type]]:
 	if args is None: return None
 
 	if T.args is None:
-		return [T, *args]
+		return [T] + args
 	args_len = len(T.args)
 
 	instance = T.get_instance(tuple(args[:args_len]))
@@ -608,12 +624,14 @@ def parse_token(token: 'stripped', types, *, variables) \
 	else:
 		addr = Address_modes.NONE
 
-	colon_idx = Patterns.find_through_strings(token, ':')
+	colon_idx = Patterns.rfind_through_strings(token, ':')
 	dot_idx = Patterns.find_through_strings(token, '.')
 
 	if colon_idx != -1:
 		exp = token[:colon_idx]
 		field = token[colon_idx+1:].strip()
+
+		print(f'Token meta: {exp = }, {field = }')
 
 		if field == 'size':
 			type_list = parse_type(exp, types, variables=fn_instance.variables)
@@ -649,7 +667,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 			clause = get_string_label(string, strings)
 			T = types['str']
 
-		else:  # TODO: type:name, var:type, var:len
+		else:  # TODO: var:len
 			err(f'Unsupported metadata field {field!r} for token')
 
 	elif token.isidentifier():
@@ -1527,6 +1545,7 @@ while fn_queue:
 		match = Patterns.split_word.match(line)
 		if match[1] == 'let':
 			name, type_str = match[2].split(maxsplit=1)
+			print('DECALRATION:', (name, type_str))
 
 			if name in fn_instance.variables:
 				var = fn_instance.variables[name]
