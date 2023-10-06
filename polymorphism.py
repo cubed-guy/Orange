@@ -665,7 +665,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 
 			string = bytes(exp_type.name, 'utf-8')
 			clause = get_string_label(string, strings)
-			T = types['str']
+			T = STR_TYPE
 
 		elif field == 'name':
 			parse_type_result = parse_type(exp, types, variables=fn_instance.variables)
@@ -678,7 +678,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 
 			string = bytes(T.name, 'utf-8')
 			clause = get_string_label(string, strings)
-			T = types['str']
+			T = STR_TYPE
 
 		else:  # TODO: var:len
 			err(f'Unsupported metadata field {field!r} for token')
@@ -714,7 +714,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 		for field in chain:
 			field = field.strip()
 			print(f'  {field = }')
-			if T.deref is not None:
+			if T is not STR_TYPE and T.deref is not None:
 				# We want to dereference T, so we first put it into a register
 				size = Type.get_size(T)
 				insts += (
@@ -829,7 +829,7 @@ def parse_token(token: 'stripped', types, *, variables) \
 
 		string = bytes(string_data)
 		clause = get_string_label(string, strings)
-		T = types['str']
+		T = STR_TYPE
 
 	else:
 		err(f'Invalid token syntax {token!r}')
@@ -930,7 +930,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 				if val: return Flag.ALWAYS
 				else: return Flag.NEVER
 
-			elif T is types['str']:
+			elif T is STR_TYPE:
 				# TODO: account for null strings
 				return Flag.ALWAYS
 			elif exp_clause is not None:
@@ -1071,7 +1071,7 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 				output('test rcx, rcx')
 				return Flags.nz
 			output('mov rax, rcx')
-			return types['int']
+			return INT_TYPE
 		elif fn_name not in caller_type.methods:
 			# check for deref only if method doesn't exist
 			if caller_type.deref is not None:
@@ -1135,7 +1135,7 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 	# Handles UNSPECIFIED_TYPE
 	for typename, subbed_type in type_mappings.items():
 		if subbed_type is UNSPECIFIED_TYPE:
-			type_mappings[typename] = types['int']
+			type_mappings[typename] = INT_TYPE
 
 	try:
 		instance_key = tuple(type_mappings[typearg_name].name for typearg_name in fn_header.typeargs)
@@ -1185,7 +1185,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator in ('<', '>', '<=', '>='): inst = 'cmp'
 	elif operator in ('==', '!='):
 		# get_operator_insts() should take type of both operands
-		if operand_type is types['str']:
+		if operand_type is STR_TYPE:
 			return [
 				f'mov rcx, {{dest_reg:8}}',
 				f'mov rdx, {operand_clause}',
@@ -1254,7 +1254,7 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 		err(f'Unsupported operator {operator!r} between '
 			f'{l_type} and {r_type}')
 
-	if types['str'] in [l_type, r_type]:
+	if STR_TYPE in [l_type, r_type]:
 		if r_type is l_type or UNSPECIFIED_TYPE in [l_type, r_type]:
 			if operator == '==': return Flag.e
 			if operator == '!=': return Flag.ne
@@ -1262,17 +1262,17 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 		if r_type is l_type or operator not in ('+', '-'):
 			err(f'Unsupported operator {operator!r} between '
 				f'{l_type} and {r_type}')
-		return types['str']
+		return STR_TYPE
 
 	if operator in '+-':
 		if l_type.deref is not None and r_type.deref is None:
-			if r_type not in (types['int'], UNSPECIFIED_TYPE):
+			if r_type not in (INT_TYPE, UNSPECIFIED_TYPE):
 				err(f'Cannot offset a pointer using {r_type}')
 			return l_type
 
 	if operator == '+':
 		if r_type.deref is not None and l_type.deref is None:
-			if l_type not in (types['int'], UNSPECIFIED_TYPE):
+			if l_type not in (INT_TYPE, UNSPECIFIED_TYPE):
 				err(f'Cannot offset a pointer using {l_type}')
 			return r_type
 
@@ -1296,8 +1296,8 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 	if UNSPECIFIED_TYPE in (l_type, r_type):
 		return UNSPECIFIED_TYPE
 
-	if types['int'] in (l_type, r_type):
-		return types['int']
+	if INT_TYPE in (l_type, r_type):
+		return INT_TYPE
 
 	return types['char']
 
@@ -1321,7 +1321,10 @@ types = {
 	'any': Type('any', None),
 }
 ANY_TYPE = types['any']
-types['str'].deref = types['char']
+INT_TYPE = types['int']
+STR_TYPE = types['str']
+STR_TYPE.deref = types['char']
+STR_TYPE.fields['_ptr'] = Variable('_ptr', 0, types['char'].pointer(), -1)
 
 builtin_types = {*types.copy().values(), UNSPECIFIED_TYPE, FLAG_TYPE}
 
