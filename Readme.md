@@ -2,6 +2,8 @@
 
 poly is a strongly typed compiled language with polymorphic functions and structs.
 
+
+
 ## Basic Syntax
 
 ```ts
@@ -88,10 +90,10 @@ end
 
 fn main
     let char_node &Node char  // we have instantiated 'Node' with 'char'
-    let int_node &Node int
+    let int_node  &Node int   // we have instantiated 'Node' with 'int'
 
     char_node = alloc(Node char)
-    int_node = alloc(Node int)
+    int_node  = alloc(Node int)
 
     let int_list_len int
     let char_list_len int
