@@ -818,7 +818,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			elif escape is In_string.HEX1:
 				if not c.isdigit() and c.lower() not in 'abcdef':
 					err('Invalid hexadecimal escape sequence')
-				h_val = int(c, 16) << 8
+				h_val = int(c, 16) << 4
 				escape = In_string.HEX2
 
 			elif escape is In_string.HEX2:
