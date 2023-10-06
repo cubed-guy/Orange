@@ -10,12 +10,12 @@
 # DONE: classmethods
 # DONE: array deref syntax
 # DONE: array assignment syntax
-# TODO: a (better) way to cast variables, Exposed T, Self
 # TODO: modules, import, nested typedef
 # TODO: arrays, dictionaries, std
-# TODO: SoA
 # TODO: constants
 # TODO: check non-void return
+# TODO: a (better) way to cast variables, Exposed T, Self
+# TODO: SoA support
 
 from sys import argv
 from enum import Enum, auto
@@ -25,7 +25,9 @@ from os import system
 
 class Shared:
 	debug = True
-	assemble = False
+	assemble = True
+	link = True
+	arch = None
 	line = '[DEBUG] ** Empty line **'
 	line_no = 0
 
@@ -33,30 +35,38 @@ class Subscriptable:
 	def __getitem__(self, key):
 		return f'{self.__class__.__name__}_{id(self)&0xffff:x04}[{key}]'
 
+class Arch(Enum):
+	elf64 = auto()
+	win64 = auto()
+
 if __name__ != '__main__': Shared.debug = True
 elif '-d' in argv: Shared.debug = True; argv.remove('-d')
 else: Shared.debug = False
 Shared.debug = True
 
-if '-a' in argv: Shared.assemble = True; argv.remove('-a')
+if '-e' in argv:
+	Shared.assemble = False
+	Shared.link = False
+	argv.remove('-e')
+if '-a' in argv:
+	Shared.link = False
+	argv.remove('-a')
 
-WIN64, ELF64, *_ = range(4)
-PTR_SIZE = 8
-
-if   '-win' in argv: arch = WIN64; argv.remove('-win')
-elif '-elf' in argv: arch = ELF64; argv.remove('-elf')
-elif Shared.debug: arch = WIN64
+if   '-win' in argv: Shared.arch = Arch.win64; argv.remove('-win')
+elif '-elf' in argv: Shared.arch = Arch.elf64; argv.remove('-elf')
+elif Shared.debug: Shared.arch = Arch.win64
 else:
 	print('Format not specified. A "-win" or "-elf" flag is required.')
 	quit(1)
-
-crlf = int(arch == WIN64)
 
 if len(argv) <2:
 	if Shared.debug: argv.append('test.poly')
 	else: print('Input file not specified'); quit(1)
 file_name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(file_name+'.asm')
+
+PTR_SIZE = 8
+crlf = int(Shared.arch == WIN64)
 
 Shared.infile = open(argv[1])
 Shared.out = open(argv[2], 'w')
@@ -1013,7 +1023,7 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 	idx = 0
 	while idx != -1:
 		if len(arg_types) >= len(arg_regs):
-			err('Only upto 4 arguments are allowed')
+			err(f'Only upto {len(arg_regs)} arguments are allowed')
 		arg_reg = arg_regs[len(arg_types)]
 
 		end = Patterns.find_through_strings(args_str, ',', start=idx+1)
@@ -1354,7 +1364,10 @@ for builtin_type in types.values():
 	for method in builtin_type.methods.values():
 		method.add_sub(())
 
-arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
+if Shared.arch is Arch.win64:
+	arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
+else:
+	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
 in_function = False
 curr_type = None
@@ -1895,11 +1908,28 @@ for string, label in strings.items():
 
 Shared.out.close()
 
+commands = []
+
 if Shared.assemble:
-	cmd = ' && '.join((
-		f"nasm \"{Shared.out.name}\" -f win64 -o \"{file_name}.o\"",
-		f"gcc-asm \"{file_name}.o\" -o \"{file_name}.exe\""
-	))
+	commands.append(f"nasm \"{Shared.out.name}\" -f {Shared.arch.name} -o \"{file_name}.o\"")
+
+if Shared.link:
+	if Shared.debug:
+		linker = 'gcc-asm'
+	else:
+		linker = 'gcc'
+
+	if Shared.arch == Arch.win64:
+		bin_extension = '.exe'
+	elif Shared.arch == Arch.elf64:
+		bin_extension = ''
+	else:
+		raise TypeError(f'Unsupported architecture {Shared.arch!r}')
+
+	commands.append(f"{linker} \"{file_name}.o\" -o \"{file_name}{bin_extension}\"")
+
+if commands:
+	cmd = ' && '.join(commands)
 	result = system(cmd)
 	print('Assembling using', repr(cmd))
 	print('Linking result =', result)

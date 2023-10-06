@@ -50,22 +50,12 @@ Clone the repository to be able to use the language or [download the repo files]
 
 You'll also need to get [nasm](https://www.nasm.us/pub/nasm/snapshots/latest/) and gcc.
 
-**Note:** _For Windows, use [this direct link](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z) to download the gcc version that works for poly._
+**Note:** _For Windows, use [this direct link](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z) to download the gcc version that works for poly. (It requires 7zip, so make sure you have that too, or convert it online)_
 
-**Compile a `.poly` file on Windows**
 ```batch
 > python3 <path_to_compiler>/polymorphism.py <poly_file_name>.poly <assembly_file_name>.asm
-> <path to nasm> -fwin64 <assembly_file_name>.asm -o <object_file_name>.o
-> <path to gcc> <object_file_name>.o -o <executable_file_name>.exe
 ```
-`nasm` and `gcc` are found in their corresponding `bin` folders. Alternatively, you can add the `bin` folders to your path variables to avoid typing the path a every time.
-
-**Compile a `.poly` file on Linux (and perhaps macOS)**
-```bash
-$ python3 <path_to_compiler>/polymorphism.py <poly_file_name>.poly <assembly_file_name>.asm
-$ nasm -felf64 <assembly_file_name>.asm -o <object_file_name>.o
-$ gcc -no-pie <object_file_name>.o -o <binary_file_name>
-```
+`nasm` and `gcc` are found in their corresponding `bin` folders. poly can compile fully if you add the `bin` folders to your path variables.
 
 ## Polymorphism
 ```ts
