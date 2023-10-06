@@ -597,7 +597,9 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	err('Types cannot be parsed')
 	return [UNSPECIFIED_TYPE]
 
-def parse_token(token: 'stripped', types, *, variables) \
+	match = None
+
+def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	-> (list[str], Union[str, int], Type):
 	# (instructions to get the value of token, expression, type)
 
@@ -661,10 +663,13 @@ def parse_token(token: 'stripped', types, *, variables) \
 			T = UNSPECIFIED_TYPE
 		elif field == 'type':
 			_insts, _clause, exp_type = parse_token(exp, types,
-				variables=fn_instance.variables)
+				variables=fn_instance.variables, virtual=True)
 
 			string = bytes(exp_type.name, 'utf-8')
-			clause = get_string_label(string, strings)
+			if virtual:
+				clause = None
+			else:
+				clause = get_string_label(string, strings)
 			T = STR_TYPE
 
 		elif field == 'name':
@@ -693,6 +698,8 @@ def parse_token(token: 'stripped', types, *, variables) \
 		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
 			insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{clause}]')
+			clause = None
+		elif virtual:
 			clause = None
 		else:
 			clause = f'{size_prefix(var.type.size)} [{clause}]'
