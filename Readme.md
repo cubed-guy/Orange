@@ -1,8 +1,6 @@
-# poly _(name subject to change)_
+# Orange
 
-poly is a strongly typed compiled language with polymorphic functions and structs.
-
-
+Orange is a strongly typed compiled language with polymorphic functions and structs.
 
 ## Basic Syntax
 
@@ -46,16 +44,16 @@ end
 
 ## Usage
 
-Clone the repository to be able to use the language or [download the repo files](https://github.com/cubed-guy/poly/archive/refs/heads/master.zip).
+Clone the repository to be able to use the language or [download the repo files](https://github.com/cubed-guy/orange/archive/refs/heads/master.zip).
 
 You'll also need to get [nasm](https://www.nasm.us/pub/nasm/snapshots/latest/) and gcc.
 
-**Note:** _For Windows, use [this direct link](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z) to download the gcc version that works for poly. (It requires 7zip, so make sure you have that too, or convert it online)_
+**Note:** _For Windows, use [this direct link](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z) to download the gcc version that works for Orange. (It requires 7zip, so make sure you have that too, or convert it online)_
 
 ```batch
-> python3 <path_to_compiler>/polymorphism.py <poly_file_name>.poly <assembly_file_name>.asm
+> python3 <path_to_compiler>/orange.py <orange_file_name>.or <assembly_file_name>.asm
 ```
-`nasm` and `gcc` are found in their corresponding `bin` folders. poly can compile fully if you add the `bin` folders to your path variables.
+`nasm` and `gcc` are found in their corresponding `bin` folders. Orange can compile fully if you add the `bin` folders to your path variables.
 
 ## Polymorphism
 ```ts

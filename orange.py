@@ -60,7 +60,7 @@ else:
 	quit(1)
 
 if len(argv) <2:
-	if Shared.debug: argv.append('test.poly')
+	if Shared.debug: argv.append('example.or')
 	else: print('Input file not specified'); quit(1)
 file_name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(file_name+'.asm')
