@@ -790,6 +790,12 @@ fn nested_types
 	Nested &Node char.call_inner(&nest_instance)
 end
 
+import fib "fib.or"
+
+fn imports
+	fib.main()
+end
+
 fn main
 	// basics()
 	// operations()
@@ -807,6 +813,7 @@ fn main
 	// scanf_test()
 	// passing_args()
 	nested_types()
+	imports()
 
 	// puts("Hello, World!")
 end

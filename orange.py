@@ -12,7 +12,7 @@
 # DONE: array assignment syntax
 # DONE: extern
 # DONE: nested typedef
-# TODO: module imports (types are modules)
+# DONE: module imports (modules are types)
 # TODO: arrays, dictionaries, std
 # TODO: constants
 # TODO: enums?
@@ -26,6 +26,7 @@ from enum import Enum, auto
 from enum import Flag as Enum_flag
 from typing import Union, Optional
 from os import system
+import os.path
 
 class Shared:
 	debug = True
@@ -80,7 +81,7 @@ def output(*args, file = Shared.out, **kwargs):
 	print(*args, **kwargs, file = file)
 
 def err(msg):
-	print(f'File "{argv[1]}", line {Shared.line_no}')
+	print(f'File "{Shared.infile.name}", line {Shared.line_no}')
 	print('   ', Shared.line.strip())
 	if Shared.debug: raise RuntimeError(msg)
 
@@ -211,15 +212,19 @@ ret
 class Function_header:
 	def __init__(
 		self, name, typeargs: tuple[str], args: tuple[str, str], ret_type: str,
-		tell, line_no
+		module, tell, line_no, infile=None
 	):
 		self.name = name
 		self.typeargs = typeargs
 		self.args = args
+		self.ret_type = ret_type
+
+		self.module = module
 		self.tell = tell
 		self.line_no = line_no
+		self.infile = infile
+
 		self.instances = {}
-		self.ret_type = ret_type
 
 		for arg_entry in args:
 			if len(arg_entry) != 2:
@@ -292,15 +297,17 @@ class Type:
 	def __init__(self, name, size = 0, args = ()):
 		self.name = name
 		self.size = size
-		self.fields = {}
+		self.args = args
+
 		self.deref = None
 		self.ref = None
-		self.args = args
 		self.parent = self
 
 		self.children = {}   # nested types
-		self.instances = {}  # polymorphic instances
 		self.methods = {}
+
+		self.fields = {}
+		self.instances = {}  # polymorphic instances
 
 	def __repr__(self):
 		return f'{self.__class__.__name__}({self.name})'
@@ -312,6 +319,248 @@ class Type:
 		if not isinstance(T, cls):
 			err(f'[Internal Error] Invalid type {T.__class__} for type')
 		return T.size
+
+
+	@classmethod
+	def read_module(cls, name, infile, *, args=(), in_module=True):
+		# First pass, get the declarations
+		print(f'PASS 1 on {infile.name!r}')
+
+		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
+		out_mod.children = std_types.copy()
+		curr_type_dict = out_mod.children
+
+		out_mod.methods = {
+			'print': Function_header('print', (), (('int', 'n'),), 'void', out_mod, 0, 0),
+			'println': Function_header('println', (), (('int', 'n'),), 'void', out_mod, 0, 0),
+			'printstr': Function_header('printstr', (), (('str', 's'),), 'void', out_mod, 0, 0),
+			'printaddr': Function_header('printaddr', (), (('&any', 'p'),), 'void', out_mod, 0, 0),
+			'puts': Function_header('puts', (), (('str', 's'),), 'void', out_mod, 0, 0),
+			'alloc': Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0),
+			'free': Function_header('free', (), (('&any', 'p'),), 'void', out_mod, 0, 0),
+		}
+
+		for fn in out_mod.methods.values():
+			fn.add_sub(())
+
+		curr_type = out_mod
+		type_stack = []
+
+		in_function = False
+		scope_level = 0
+
+		tell = 0
+		for Shared.line_no, Shared.line in enumerate(infile, 1):
+			tell += len(Shared.line) + crlf
+			match = Patterns.stmt.match(Shared.line)
+			line = match[2]
+
+			match = Patterns.split_word.match(line)
+
+			if not match: continue
+			elif match[1] == 'type':
+				print('[P1] New type in', curr_type)
+
+				if in_function: err('Local type definitions are not yet supported')
+
+				name, *args = match[2].split()
+				# if args: err('Polymorphic types are not yet supported')
+
+				if name in curr_type_dict: err(f'Type {name!r} already defined')
+
+				if in_module or curr_type is not out_mod:
+					qual_name = f'{curr_type.name}.{name}'
+				else:
+					qual_name = name
+				
+				print(f'{curr_type_dict == curr_type.children = }')
+
+				curr_type = Type(qual_name, args = curr_type.args + tuple(args))
+
+				type_stack.append(curr_type)
+				curr_type_dict[name] = curr_type
+				print('NEW TYPE', curr_type)
+				print(curr_type_dict)
+				curr_type_dict = curr_type.children
+
+				# scope_level += 1  # scope level goes up and down only if in_function
+
+				# if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
+				# 	if pointer:
+				# 		T = '&' + T
+				# else:
+				# 	T = types[T]
+				# 	if pointer:
+				# 		T = T.pointer()
+
+				# if T is curr_type:
+				# 	err(f'Recursive declaration. ({T} within {T})')
+
+				# if T is ANY_TYPE:
+				# 	err("A variable of type 'any' must be a pointer")
+
+			elif match[1] == 'import':
+				print('[P1] New type')
+
+				if in_function: err('Local type definitions are not yet supported')
+
+				name, path_string = match[2].split(maxsplit=1)
+				# if args: err('Polymorphic types are not yet supported')
+
+				if name in curr_type_dict: err(f'Type {name!r} already defined')
+
+				mod_path = parse_string(path_string)
+
+				absolute_path = os.path.expanduser(mod_path)
+
+				if not os.path.exists(absolute_path):
+					err(f'Cannot import module. Path not found: {mod_path!r}')
+
+				module_file = open(absolute_path.decode('utf-8'))
+				Shared.infile = module_file
+
+				if in_module or curr_type is not out_mod:
+					qual_name = f'{curr_type.name}.{name}'
+				else:
+					qual_name = name
+
+				module = Type.read_module(
+					qual_name, infile=module_file, args = curr_type.args
+				)
+
+				Shared.infile = infile
+				curr_type_dict[name] = module
+				print('NEW MODULE', module)
+
+			elif match[1] == 'fn':  # function header
+				print(f'[P1] New function')
+				if in_function:
+					err('Local functions are not supported')
+
+				# name typeargs : type arg, comma separated
+				pre, arrow, ret_type = match[2].partition('->')
+				pre, _, args = pre.partition(':')
+				name, *typeargs = pre.split()
+				args = args.strip()
+				args = args.split(',')
+				if args[-1] == '': args.pop()
+
+				if not arrow: ret_type = 'void'
+				else: ret_type = ret_type.strip()
+
+				# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
+
+				if name in curr_type.methods:
+					err(f'Function {name!r} already defined.')
+
+				if in_module or curr_type is not out_mod:
+					qual_name = f'{curr_type.name}.{name}'
+				else:
+					qual_name = name
+
+				fn = Function_header(
+					qual_name, (*typeargs, *curr_type.args),
+					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
+					ret_type, out_mod, tell, Shared.line_no, infile
+				)
+				print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+				curr_type.methods[name] = fn
+
+				in_function = True
+				scope_level += 1
+
+			elif match[1] == 'extern':  # gets added to be linked
+				# syntax extern name: type arg -> ret
+
+				if in_function:
+					err('Local functions are not supported')
+
+				# name typeargs : type arg, comma separated
+				pre, arrow, ret_type = match[2].partition('->')
+				pre, _, args = pre.partition(':')
+				name, *typeargs = pre.split()
+				args = args.strip()
+				args = args.split(',')
+				if args[-1] == '': args.pop()
+
+				if not arrow: ret_type = 'void'
+				else: ret_type = ret_type.strip()
+
+				# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
+
+				if name in curr_type.methods:
+					err(f'Function {name!r} already defined.')
+
+				if in_module or curr_type is not out_mod:
+					qual_name = f'{curr_type.name}.{name}'
+				else:
+					qual_name = name
+
+				fn = Function_header(
+					qual_name, (*typeargs, *curr_type.args),
+					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
+					ret_type, out_mod, tell, Shared.line_no, infile
+				)
+				print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+				curr_type.methods[name] = fn
+
+				fn.add_sub((), isextern=True)
+				output('extern', name)
+
+			elif type_stack and not in_function:
+				if match[1] == 'let':
+					print(f'[P1] New field in {curr_type!r}')
+					match = Patterns.split_word.match(match[2])
+					name = match[1]
+					T = match[2]
+
+					if name in curr_type.fields:
+						var = curr_type.fields[name]
+						err(f'Field {name!r} already declared in '
+							f'line {var.decl_line_no}')
+
+					curr_type.fields[name] = (
+						Variable(name, curr_type.size, T, Shared.line_no)
+					)
+					print(f'  Created a field {name!r} of {T}')
+					if curr_type.size is not None:
+						if not isinstance(T, Type):
+							curr_type.size = None
+						else:
+							curr_type.size += T.size
+
+				elif match[1] == 'end':
+					print(f'[P1] End of {curr_type!r}')
+					for name, field in curr_type.fields.items():
+						print(name, field.type)
+					type_stack.pop()  # no need to check emptiness.
+
+					if type_stack: curr_type = type_stack[-1]
+					else: curr_type = out_mod
+
+					curr_type_dict = curr_type.children
+
+			# else: not (type_stack and not in_function) == not type_stack or in_function
+
+			elif match[1] in ('if', 'while'):
+				print(f'[P1] Enter construct')
+
+				scope_level += 1
+
+			elif match[1] == 'end':
+				# first part handled by match[1] == 'type'
+				# (type > ... > type) > fn > cond > cond > ...
+				scope_level -= 1
+				if scope_level < 0:
+					err('end statement does not match any block')
+				elif scope_level == 0:
+					print(f'[P1] End function')
+					in_function = False
+				else:
+					print(f'[P1] Exit construct')
+
+		return out_mod
+
 
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		global types
@@ -399,10 +648,13 @@ class Type:
 					err('Cannot use children of a polymorphic type')
 
 				if token not in out_mappings:
+					print(f'MATCH {token!r} to {expected_type}')
 					out_mappings[token] = expected_type
 				elif out_mappings[token] is UNSPECIFIED_TYPE:
+					print(f'MATCH {token!r} to {expected_type}')
 					out_mappings[token] = expected_type
 				elif expected_type is ANY_TYPE:
+					print(f'MATCH {token!r} to {expected_type}')
 					out_mappings[token] = expected_type
 
 				elif out_mappings[token] is not expected_type:
@@ -411,6 +663,7 @@ class Type:
 						f'{expected_type} and {out_mappings[token]}')
 			else:
 				# token is a concrete type
+				print(f'MATCH {token!r} to {expected_type}')
 				evaluated_type = types[token]
 				for child in children:
 					if child not in evaluated_type.children:
@@ -637,6 +890,53 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 
 	match = None
 
+def parse_string(token) -> bytes:
+	if token[0] != '"': err('Strings can only start with \'"\'')
+
+	string_data = bytearray()
+	h_val = None
+	escape = In_string.NONE
+	for c in token[1:]:
+		if escape is In_string.NONE:
+			if   c == '\\': escape = In_string.YES
+			elif c == '\"': escape = In_string.OUT
+			else: string_data.extend(c.encode())
+		elif escape is In_string.YES:
+			if c == 'x': escape = In_string.HEX1; continue
+
+			if   c == '0':  string_data.append(0)
+			elif c == 't':  string_data.append(9)
+			elif c == 'n':  string_data.append(10)
+			elif c == 'e':  string_data.append(27)
+			elif c == '"':  string_data.append(34)
+			elif c == "'":  string_data.append(39)
+			elif c == '\\': string_data.append(92)
+			else:
+				err('Invalid escape sequence')
+
+			escape = In_string.NONE
+
+		elif escape is In_string.HEX1:
+			if not c.isdigit() and c.lower() not in 'abcdef':
+				err('Invalid hexadecimal escape sequence')
+			h_val = int(c, 16) << 4
+			escape = In_string.HEX2
+
+		elif escape is In_string.HEX2:
+			if not c.isdigit() and c.lower() not in 'abcdef':
+				err('Invalid hexadecimal escape sequence')
+			string_data.append(h_val | int(c, 16))
+			h_val = None
+			escape = In_string.NONE
+
+		elif escape is In_string.OUT:
+			if not c.isspace():
+				err(f'Unexpected character {c!r} after string literal')
+	if escape is not In_string.OUT:
+		err('Unexpected EOL inside string')
+
+	return bytes(string_data)
+
 def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	-> (list[str], Union[str, int], Type):
 	# (instructions to get the value of token, expression, type)
@@ -830,49 +1130,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	elif token.startswith('"'):
 		if addr is Address_modes.ADDRESS: err('Cannot take address of string literal')
 
-		string_data = bytearray()
-		h_val = None
-		escape = In_string.NONE
-		for c in token[1:]:
-			if escape is In_string.NONE:
-				if   c == '\\': escape = In_string.YES
-				elif c == '\"': escape = In_string.OUT
-				else: string_data.extend(c.encode())
-			elif escape is In_string.YES:
-				if c == 'x': escape = In_string.HEX1; continue
-
-				if   c == '0':  string_data.append(0)
-				elif c == 't':  string_data.append(9)
-				elif c == 'n':  string_data.append(10)
-				elif c == 'e':  string_data.append(27)
-				elif c == '"':  string_data.append(34)
-				elif c == "'":  string_data.append(39)
-				elif c == '\\': string_data.append(92)
-				else:
-					err('Invalid escape sequence')
-
-				escape = In_string.NONE
-
-			elif escape is In_string.HEX1:
-				if not c.isdigit() and c.lower() not in 'abcdef':
-					err('Invalid hexadecimal escape sequence')
-				h_val = int(c, 16) << 4
-				escape = In_string.HEX2
-
-			elif escape is In_string.HEX2:
-				if not c.isdigit() and c.lower() not in 'abcdef':
-					err('Invalid hexadecimal escape sequence')
-				string_data.append(h_val | int(c, 16))
-				h_val = None
-				escape = In_string.NONE
-
-			elif escape is In_string.OUT:
-				if not c.isspace():
-					err(f'Unexpected character {c!r} after string literal')
-		if escape is not In_string.OUT:
-			err('Unexpected EOL inside string')
-
-		string = bytes(string_data)
+		string = parse_string(token)
 		clause = get_string_label(string, strings)
 		T = STR_TYPE
 
@@ -1044,6 +1302,8 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 # args_str must include the starting bracket
 # args_str = '(arg1, arg2)', but not 'arg, arg2)'
 def call_function(fn_name, arg_types, args_str, *, variables):
+	global curr_mod
+
 	if fn_name == 'alloc':
 		alloc_type = None
 		alloc_fac  = None
@@ -1127,10 +1387,10 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 				err(f'{caller_type} has no method named {fn_name!r}')
 		fn_header = caller_type.methods[fn_name]
 		print('METHOD  ', fn_name, fn_header)
-	elif fn_name not in function_headers:
+	elif fn_name not in curr_mod.methods:
 		err(f'No function named {fn_name!r}')
 	else:
-		fn_header = function_headers[fn_name]
+		fn_header = curr_mod.methods[fn_name]
 		print('FUNCTION', fn_name, fn_header)
 		caller_type = None
 
@@ -1354,294 +1614,40 @@ def get_string_label(string, strings):
 
 # Strongly typed
 
-# First pass, get the declarations
+if Shared.arch is Arch.win64:
+	arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
+else:
+	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
-fn_queue = []
 # Builtins
-types = {
+std_types = {
 	'str': Type('str', 8),
 	'int': Type('int', 4),
 	'char': Type('char', 1),
 	'void': Type('void', 0),
 	'any': Type('any', None),
 }
-ANY_TYPE = types['any']
-INT_TYPE = types['int']
-STR_TYPE = types['str']
-STR_TYPE.deref = types['char']
-STR_TYPE.fields['_ptr'] = Variable('_ptr', 0, types['char'].pointer(), -1)
+ANY_TYPE = std_types['any']
+INT_TYPE = std_types['int']
+STR_TYPE = std_types['str']
+STR_TYPE.deref = std_types['char']
+STR_TYPE.fields['_ptr'] = Variable('_ptr', 0, std_types['char'].pointer(), -1)
 
-builtin_types = {*types.copy().values(), UNSPECIFIED_TYPE, FLAG_TYPE}
+builtin_types = {*std_types.values(), UNSPECIFIED_TYPE, FLAG_TYPE}
 
-# Builtins
-# Function_header(name, type_args, *args(type, name), ret_type, tell, line_no)
-function_headers = {
-	'print': Function_header('print', (), (('int', 'n'),), 'void', 0, 0),
-	'println': Function_header('println', (), (('int', 'n'),), 'void', 0, 0),
-	'printstr': Function_header('printstr', (), (('str', 's'),), 'void', 0, 0),
-	'printaddr': Function_header('printaddr', (), (('&any', 'p'),), 'void', 0, 0),
-	'puts': Function_header('puts', (), (('str', 's'),), 'void', 0, 0),
-	'alloc': Function_header('alloc', (), (('int', 'n'),), '', 0, 0),
-	'free': Function_header('free', (), (('&any', 'p'),), 'void', 0, 0),
-}
-
-for fn in function_headers.values():
-	fn.add_sub(())
-
-for builtin_type in types.values():
+for builtin_type in std_types.values():
 	for method in builtin_type.methods.values():
 		method.add_sub(())
 
-if Shared.arch is Arch.win64:
-	arg_regs = (Register.c, Register.d, Register.r8, Register.r9)
-else:
-	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
-in_function = False
-curr_type_dict = types
-type_stack = []
-curr_type = None
-scope_level = 0
+main_module = Type.read_module('main', Shared.infile, in_module=False)
 
-print('PASS 1')
-
-tell = 0
-for Shared.line_no, Shared.line in enumerate(Shared.infile, 1):
-	tell += len(Shared.line) + crlf
-	match = Patterns.stmt.match(Shared.line)
-	line = match[2]
-
-	match = Patterns.split_word.match(line)
-
-	if not match: continue
-	elif match[1] == 'type':
-		print('[P1] New type')
-
-		if in_function: err('Local type definitions are not yet supported')
-
-		name, *args = match[2].split()
-		# if args: err('Polymorphic types are not yet supported')
-
-		if name in curr_type_dict: err(f'Type {name!r} already defined')
-
-		if curr_type is None:
-			curr_type = Type(name, args = args)
-		else:
-			curr_type = Type(
-				curr_type.name + '.' + name, args = curr_type.args + args
-			)
-
-		type_stack.append(curr_type)
-		curr_type_dict[name] = curr_type
-		curr_type_dict = curr_type.children
-		print('NEW TYPE', curr_type)
-
-		# scope_level += 1  # scope level goes up and down only if in_function
-
-		# if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
-		# 	if pointer:
-		# 		T = '&' + T
-		# else:
-		# 	T = types[T]
-		# 	if pointer:
-		# 		T = T.pointer()
-
-		# if T is curr_type:
-		# 	err(f'Recursive declaration. ({T} within {T})')
-
-		# if T is ANY_TYPE:
-		# 	err("A variable of type 'any' must be a pointer")
-
-
-	elif type_stack and not in_function:
-		if match[1] == 'let':
-			print(f'[P1] New field in {curr_type!r}')
-			match = Patterns.split_word.match(match[2])
-			name = match[1]
-			T = match[2]
-
-			if name in curr_type.fields:
-				var = curr_type.fields[name]
-				err(f'Field {name!r} already declared in '
-					f'line {var.decl_line_no}')
-
-			curr_type.fields[name] = (
-				Variable(name, curr_type.size, T, Shared.line_no)
-			)
-			print(f'  Created a field {name!r} of {T}')
-			if curr_type.size is not None:
-				if not isinstance(T, Type):
-					curr_type.size = None
-				else:
-					curr_type.size += T.size
-
-		elif match[1] == 'fn':  # methods
-			print(f'[P1] New method in {curr_type!r}')
-
-			# name typeargs : type arg, comma separated
-			pre, arrow, ret_type = match[2].partition('->')
-			pre, _, args = pre.partition(':')
-			name, *typeargs = pre.split()
-			args = args.strip()
-			args = args.split(',')
-			if args[-1] == '': args.pop()
-
-			if not arrow: ret_type = 'void'
-			else: ret_type = ret_type.strip()
-
-			# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
-
-			if name in curr_type.methods:
-				err(f'Function {name!r} already defined.')
-
-			fn = Function_header(f'{curr_type.name}.{name}',
-				(*typeargs, *curr_type.args),  # curr_type.args may have Type objects?
-				tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-				ret_type, tell, Shared.line_no
-			)
-			print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
-			curr_type.methods[name] = fn
-
-			in_function = True
-			scope_level = 1
-
-		elif match[1] == 'end':
-			print(f'[P1] End of {curr_type!r}')
-			for name, field in curr_type.fields.items():
-				print(name, field.type)
-			type_stack.pop()  # no need to check emptiness.
-
-			if type_stack:
-				curr_type = type_stack[-1]
-				curr_type_dict = curr_type.children
-			else:
-				curr_type = None
-				curr_type_dict = types
-
-		elif match[1] == 'extern':  # gets added to be linked
-			# syntax extern name: type arg -> ret
-
-			if in_function:
-				err('Local functions are not supported')
-
-			# name typeargs : type arg, comma separated
-			pre, arrow, ret_type = match[2].partition('->')
-			pre, _, args = pre.partition(':')
-			name, *typeargs = pre.split()
-			args = args.strip()
-			args = args.split(',')
-			if args[-1] == '': args.pop()
-
-			if not arrow: ret_type = 'void'
-			else: ret_type = ret_type.strip()
-
-			# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
-
-			if name in function_headers:
-				err(f'Function {name!r} already defined.')
-
-			fn = Function_header(f'{curr_type.name}.{name}',
-				(*typeargs, *curr_type.args),  # curr_type.args may have Type objects?
-				tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-				ret_type, tell, Shared.line_no
-			)
-			print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
-			curr_type.methods[name] = fn
-
-			fn.add_sub((), isextern=True)
-			output('extern', name)
-
-
-	# else: not (type_stack and not in_function) == not type_stack or in_function
-
-	elif match[1] == 'fn':  # function header
-		print(f'[P1] New function')
-		if in_function:
-			err('Local functions are not supported')
-
-		# name typeargs : type arg, comma separated
-		pre, arrow, ret_type = match[2].partition('->')
-		pre, _, args = pre.partition(':')
-		name, *typeargs = pre.split()
-		args = args.strip()
-		args = args.split(',')
-		if args[-1] == '': args.pop()
-
-		if not arrow: ret_type = 'void'
-		else: ret_type = ret_type.strip()
-
-		# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
-
-		if name in function_headers:
-			err(f'Function {name!r} already defined.')
-
-		fn = Function_header(
-			name, (*typeargs,),
-			tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-			ret_type, tell, Shared.line_no
-		)
-		print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
-		function_headers[name] = fn
-
-		if name == 'main':  # not be confused with if __name__ == '__main__':
-			fn.add_sub(())
-			fn_queue.append((fn, ()))
-
-		in_function = True
-		scope_level += 1
-
-	elif match[1] in ('if', 'while'):
-		print(f'[P1] Enter construct')
-
-		scope_level += 1
-
-	elif match[1] == 'end':
-		# first part handled by match[1] == 'type'
-		# (type > ... > type) > fn > cond > cond > ...
-		scope_level -= 1
-		if scope_level < 0:
-			err('end statement does not match any block')
-		elif scope_level == 0:
-			print(f'[P1] End function')
-			in_function = False
-		else:
-			print(f'[P1] Exit construct')
-
-	elif match[1] == 'extern':  # gets added to be linked
-		# syntax extern name: type arg -> ret
-
-		if in_function:
-			err('Local functions are not supported')
-
-		# name typeargs : type arg, comma separated
-		pre, arrow, ret_type = match[2].partition('->')
-		pre, _, args = pre.partition(':')
-		name, *typeargs = pre.split()
-		args = args.strip()
-		args = args.split(',')
-		if args[-1] == '': args.pop()
-
-		if not arrow: ret_type = 'void'
-		else: ret_type = ret_type.strip()
-
-		# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
-
-		if name in function_headers:
-			err(f'Function {name!r} already defined.')
-
-		fn = Function_header(
-			name, (*typeargs,),
-			tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-			ret_type, tell, Shared.line_no
-		)
-		print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
-		function_headers[name] = fn
-
-		fn.add_sub((), isextern=True)
-		output('extern', name)
-
-if not fn_queue:
+if 'main' not in main_module.methods:
 	err("No definition of function 'main' found.")
+
+main_fn = main_module.methods['main']
+main_fn.add_sub(())
+fn_queue = [(main_fn, ())]
 
 strings = {}
 ctrl_no = 0
@@ -1655,12 +1661,18 @@ while fn_queue:
 	# 2 passes. allocate variable space first
 
 	output(f'\n; {fn_instance.type_mappings}')
+
+	curr_mod = fn.module
+	types = curr_mod.children
+
 	fn_types = types | fn_instance.type_mappings
 
 	fn_instance.init_args_vars(types)
 	offset = fn_instance.offset
 
 	scope_level = 1
+
+	Shared.infile = fn.infile
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1906,6 +1918,9 @@ while fn_queue:
 
 		elif match[1] == 'type':
 			err('Local types are not yet supported')
+
+		elif match[1] == 'import':
+			err('Cannot import inside a function')
 
 		else:
 			match = Patterns.through_strings(r'(?<!=)=(?!=)').match(line)
