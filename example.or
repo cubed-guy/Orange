@@ -1,11 +1,11 @@
-// A strongly typed language with polymorphism ie templates ie generics
-// This is a file demostrating the things that the compiler is capable of rn
+// // A strongly typed language with polymorphism ie templates ie generics
+// // This is a file demostrating the things that the compiler is capable of rn
 
-// 'type' is just a fancier word for 'struct'
-type Int_node
-	let data int
-	let next &Int_node
-end
+// // 'type' is just a fancier word for 'struct'
+// type Int_node
+// 	let data int
+// 	let next &Int_node
+// end
 
 // Polymorphic structs don't work yet... or do they?
 type Node T
@@ -25,715 +25,769 @@ type Node T
 	end
 end
 
-type Tree T
-	let data T
-	let left &Tree T
-	let right &Tree T
+// type Tree T
+// 	let data T
+// 	let left &Tree T
+// 	let right &Tree T
 
-	// 0; 1, 2; 3 4, 5 6; 7 8 9 10, 11 12 13 14
+// 	// 0; 1, 2; 3 4, 5 6; 7 8 9 10, 11 12 13 14
 
-	fn nth: &Tree T node, int n -> T
-		let depth int
-		depth = 0
-		let n2 int
-		n2 = n-1
-		while n2 > 0
-			depth = depth + 1
-			n2 = n2 >> 1
-		end
+// 	fn nth: &Tree T node, int n -> T
+// 		let depth int
+// 		depth = 0
+// 		let n2 int
+// 		n2 = n-1
+// 		while n2 > 0
+// 			depth = depth + 1
+// 			n2 = n2 >> 1
+// 		end
 
-		n2 = 1<<depth
-		n2 = n2>>1
-		n = n-1
+// 		n2 = 1<<depth
+// 		n2 = n2>>1
+// 		n = n-1
 
-		println(n+1)
-		println(depth)
-		while n2
-			if n & n2
-				node = node.right
-				puts("RIGHT")
-			else
-				node = node.left
-				puts("LEFT")
-			end
-			n2 = n2 >> 1
-		end
+// 		println(n+1)
+// 		println(depth)
+// 		while n2
+// 			if n & n2
+// 				node = node.right
+// 				puts("RIGHT")
+// 			else
+// 				node = node.left
+// 				puts("LEFT")
+// 			end
+// 			n2 = n2 >> 1
+// 		end
 
-		return node.data
-	end
-end
+// 		return node.data
+// 	end
+// end
 
-// A polymorphic function that returns the argument
-fn new_thing T: T x -> T
-	return x
-end
+// // A polymorphic function that returns the argument
+// fn new_thing T: T x -> T
+// 	return x
+// end
 
-// Won't work. variables of type 'any' cannot exist. '&any' variables can
-// # any_cast A: A a -> any
-// // println(b)
-// return a
+// // Won't work. variables of type 'any' cannot exist. '&any' variables can
+// // # any_cast A: A a -> any
+// // // println(b)
+// // return a
 
-fn test_ret -> int  // syntax especially useful if not a pure function
-	return 9
-end
+// fn test_ret -> int  // syntax especially useful if not a pure function
+// 	return 9
+// end
 
-fn basics
-	let a char
-	a = 23
+// fn basics
+// 	let a char
+// 	a = 23
 
-	let x int
-	x = 23
+// 	let x int
+// 	x = 23
 
-	println(x)
+// 	println(x)
 
-	x = test_ret()
-	println(x)
+// 	x = test_ret()
+// 	println(x)
 
-	y = a
-
-	z = new_thing(5)
-
-	c = 5
-	c = new_thing(y)
-	c = new_thing('\0')
-
-	// Declarations can be anywhere in the function.
-	// All of them have full function scope
-	let y char
-
-	let z int
-
-	y = '9'
-
-	z = new_thing(88)
-
-	println(z)
-
-	println(z)
-	println(z)
-
-	println(88)
-	println(z)
-
-	let c char
-end
-
-fn operations
-	println(1+1)
-
-	puts("Hello, World!" + 3)
-	puts(3 + "Hello, World!")
-end
-
-fn control_flow
-	let x int
-	x = 23
-
-	while x
-		x = x - 1
-		println(23-x)
-	end
-
-	x = 0
-
-	println(x)
-
-	while x < 25
-		x = x + 1
-
-		if x <= 15
-			puts("**")
-
-			let j char
-			j = 0
-			while j < 50
-				print(1)
-				j = j + 1
-			end
-			puts("")
-
-		elif x >= 20
-
-			print(x)
-			puts(" BIGGER THAN 20")
-
-		else
-
-			j = 0
-			while j < 3
-				print(0)
-				j = j + 1
-			end
+// 	y = a
+
+// 	z = new_thing(5)
+
+// 	c = 5
+// 	c = new_thing(y)
+// 	c = new_thing('\0')
+
+// 	// Declarations can be anywhere in the function.
+// 	// All of them have full function scope
+// 	let y char
+
+// 	let z int
+
+// 	y = '9'
+
+// 	z = new_thing(88)
+
+// 	println(z)
+
+// 	println(z)
+// 	println(z)
+
+// 	println(88)
+// 	println(z)
+
+// 	let c char
+// end
+
+// fn operations
+// 	println(1+1)
+
+// 	puts("Hello, World!" + 3)
+// 	puts(3 + "Hello, World!")
+// end
+
+// fn control_flow
+// 	let x int
+// 	x = 23
+
+// 	while x
+// 		x = x - 1
+// 		println(23-x)
+// 	end
+
+// 	x = 0
+
+// 	println(x)
+
+// 	while x < 25
+// 		x = x + 1
+
+// 		if x <= 15
+// 			puts("**")
+
+// 			let j char
+// 			j = 0
+// 			while j < 50
+// 				print(1)
+// 				j = j + 1
+// 			end
+// 			puts("")
+
+// 		elif x >= 20
+
+// 			print(x)
+// 			puts(" BIGGER THAN 20")
+
+// 		else
+
+// 			j = 0
+// 			while j < 3
+// 				print(0)
+// 				j = j + 1
+// 			end
 
-		end
+// 		end
 
-		println(x)
-	end
+// 		println(x)
+// 	end
 
 
-	x = 0
-	if x == 0
-		puts("ZERO")
-	elif x == 1
-		puts("ONE")
-	elif x == 2
-		puts("TWO")
-	else
-		puts("THREE")
-	end
+// 	x = 0
+// 	if x == 0
+// 		puts("ZERO")
+// 	elif x == 1
+// 		puts("ONE")
+// 	elif x == 2
+// 		puts("TWO")
+// 	else
+// 		puts("THREE")
+// 	end
 
-	x = 1
-	if x == 0
-		puts("ZERO")
-	elif x == 1
-		puts("ONE")
-	elif x == 2
-		puts("TWO")
-	else
-		puts("THREE")
-	end
+// 	x = 1
+// 	if x == 0
+// 		puts("ZERO")
+// 	elif x == 1
+// 		puts("ONE")
+// 	elif x == 2
+// 		puts("TWO")
+// 	else
+// 		puts("THREE")
+// 	end
 
-	x = 2
-	if x == 0
-		puts("ZERO")
-	elif x == 1
-		puts("ONE")
-	elif x == 2
-		puts("TWO")
-	else
-		puts("THREE")
-	end
+// 	x = 2
+// 	if x == 0
+// 		puts("ZERO")
+// 	elif x == 1
+// 		puts("ONE")
+// 	elif x == 2
+// 		puts("TWO")
+// 	else
+// 		puts("THREE")
+// 	end
 
-	x = 3
+// 	x = 3
 
-	if x == 0
-		puts("ZERO")
-	elif x == 1
-		puts("ONE")
-	elif x == 2
-		puts("TWO")
-	else
-		puts("THREE")
-	end
+// 	if x == 0
+// 		puts("ZERO")
+// 	elif x == 1
+// 		puts("ONE")
+// 	elif x == 2
+// 		puts("TWO")
+// 	else
+// 		puts("THREE")
+// 	end
 
-	x = 0
-	if x == 1
-		puts("ONE")
-	elif x == 0
-		puts("ZERO")
-	end
+// 	x = 0
+// 	if x == 1
+// 		puts("ONE")
+// 	elif x == 0
+// 		puts("ZERO")
+// 	end
 
-end
+// end
 
-fn dereffer T: &T x -> T
-	return *x
-end
+// fn dereffer T: &T x -> T
+// 	return *x
+// end
 
-fn pointers
-	let x int
-	x = 4
+// fn pointers
+// 	let x int
+// 	x = 4
 
-	let p &int
+// 	let p &int
 
-	p = &x
+// 	p = &x
 
-	println(*p)
+// 	println(*p)
 
-	let g int
+// 	let g int
 
-	x = 91
-	g = dereffer(p)
+// 	x = 91
+// 	g = dereffer(p)
 
-	println(g)
-	println(*p)
+// 	println(g)
+// 	println(*p)
 
-	x = 92
-	g = dereffer(p)
+// 	x = 92
+// 	g = dereffer(p)
 
-	println(g)
-	println(*p)
-end
+// 	println(g)
+// 	println(*p)
+// end
 
-fn alloc_stuff
+// fn alloc_stuff
 
-	let p &int
+// 	let p &int
 
-	p = alloc(int, 10)  // allocates 10 integers, returns &int based on first arg
+// 	p = alloc(int, 10)  // allocates 10 integers, returns &int based on first arg
 
-	*p = 90
+// 	*p = 90
 
-	println(*p)
+// 	println(*p)
 
-	free(p)
+// 	free(p)
 
-	p = alloc(int)
+// 	p = alloc(int)
 
-	*p = 16777216
+// 	*p = 16777216
 
-	println(*p)
+// 	println(*p)
 
-	free(p)
+// 	free(p)
 
-end
+// end
 
-fn linked_lists
+// fn linked_lists
 
-	let head &Int_node
-	let tail &Int_node
+// 	let head &Int_node
+// 	let tail &Int_node
 
-	tail = alloc(Int_node)
-	tail.data = 5
-	tail.next = 0  // unspecified type can go anywhere rn, maybe I should add Null?
+// 	tail = alloc(Int_node)
+// 	tail.data = 5
+// 	tail.next = 0  // unspecified type can go anywhere rn, maybe I should add Null?
 
-	println(tail.data)
+// 	println(tail.data)
 
-	head = tail
+// 	head = tail
 
-	tail.next = alloc(Int_node)
-	tail = tail.next
-	tail.data = 4
-	tail.next = 0
+// 	tail.next = alloc(Int_node)
+// 	tail = tail.next
+// 	tail.data = 4
+// 	tail.next = 0
 
-	printaddr(head)
-	printaddr(head.next)
-	printaddr(tail)
+// 	printaddr(head)
+// 	printaddr(head.next)
+// 	printaddr(tail)
 
-	let i int
-	i = 0
-	while i < 10
-		tail.next = alloc(Int_node)
-		tail = tail.next
-		tail.data = i
-		i = i + 1
-	end
-	tail.next = 0
+// 	let i int
+// 	i = 0
+// 	while i < 10
+// 		tail.next = alloc(Int_node)
+// 		tail = tail.next
+// 		tail.data = i
+// 		i = i + 1
+// 	end
+// 	tail.next = 0
 
-	let node &Int_node
-	node = head
-	while node
-		println(node.data)
-		node = node.next
-	end
+// 	let node &Int_node
+// 	node = head
+// 	while node
+// 		println(node.data)
+// 		node = node.next
+// 	end
 
-	node = head
-	while node
-		head = node.next
-		printstr("Deleting ")
-		printaddr(node)
-		free(node)
-		node = head
-	end
-end
+// 	node = head
+// 	while node
+// 		head = node.next
+// 		printstr("Deleting ")
+// 		printaddr(node)
+// 		free(node)
+// 		node = head
+// 	end
+// end
 
-fn polymorphic_structs
+// fn polymorphic_structs
 
-	let head &Node int
-	let tail &Node char
+// 	let head &Node int
+// 	let tail &Node char
 
-	head = alloc(Node int)  // alloc needs to parse type
-	head.data = 4544
+// 	head = alloc(Node int)  // alloc needs to parse type
+// 	head.data = 4544
 
-	tail = alloc(Node char)
-	tail.data = 89
+// 	tail = alloc(Node char)
+// 	tail.data = 89
 
-	let s &char
-	s = alloc(char, 2)
-	*s = tail.data
+// 	let s &char
+// 	s = alloc(char, 2)
+// 	*s = tail.data
 
-	let s2 &char
-	s2 = s + 1
+// 	let s2 &char
+// 	s2 = s + 1
 
-	*s2 = 0
+// 	*s2 = 0
 
-	puts(s + 0)
+// 	puts(s + 0)
 
-	println(head.data)
+// 	println(head.data)
 
-	// let x int
-	// x = this_thing(head)
+// 	// let x int
+// 	// x = this_thing(head)
 
-	// x = this_thing(tail)
+// 	// x = this_thing(tail)
 
-	let node &Node int
+// 	let node &Node int
 
-	node = head
-	head = alloc(Node int)
-	head.next = node
-	head.data = 55
+// 	node = head
+// 	head = alloc(Node int)
+// 	head.next = node
+// 	head.data = 55
 
-	node = head
-	head = alloc(Node int)
-	head.next = node
-	head.data = 77
+// 	node = head
+// 	head = alloc(Node int)
+// 	head.next = node
+// 	head.data = 77
 
-	node = head
-	head = alloc(Node int)
-	head.next = node
-	head.data = 99
+// 	node = head
+// 	head = alloc(Node int)
+// 	head.next = node
+// 	head.data = 99
 
-	puts("Node data")
-	node = Node_nth(head, 3)
-	println(node.data)
-	node = Node_nth(head, 2)
-	println(node.data)
-	node = Node_nth(head, 1)
-	println(node.data)
-	node = Node_nth(head, 0)
-	println(node.data)
+// 	puts("Node data")
+// 	node = Node_nth(head, 3)
+// 	println(node.data)
+// 	node = Node_nth(head, 2)
+// 	println(node.data)
+// 	node = Node_nth(head, 1)
+// 	println(node.data)
+// 	node = Node_nth(head, 0)
+// 	println(node.data)
 
-	// # this_thing A: A int a -> int
-	// return a.data
-end
+// 	// # this_thing A: A int a -> int
+// 	// return a.data
+// end
 
-fn Node_nth T: &Node T node, int n -> &Node T
-	while n
-		node = node.next
-		n = n - 1
-	end
-	return node
-end
+// fn Node_nth T: &Node T node, int n -> &Node T
+// 	while n
+// 		node = node.next
+// 		n = n - 1
+// 	end
+// 	return node
+// end
 
-fn classmethods
-	let head &Node int
-	let node &Node int
-	node = alloc(Node int)
-	head = node
+// fn classmethods
+// 	let head &Node int
+// 	let node &Node int
+// 	node = alloc(Node int)
+// 	head = node
 
-	node.data = 90
-	node.next = alloc(Node int)
-	node = node.next
+// 	node.data = 90
+// 	node.next = alloc(Node int)
+// 	node = node.next
 
-	node.data = 45
-	node.next = alloc(Node int)
-	node = node.next
+// 	node.data = 45
+// 	node.next = alloc(Node int)
+// 	node = node.next
 
-	node.data = 22
-	node.next = alloc(Node int)
-	node = 0
+// 	node.data = 22
+// 	node.next = alloc(Node int)
+// 	node = 0
 
-	let a int
-	a = Node int.nth(head, 2)
-	println(a)
+// 	let a int
+// 	a = Node int.nth(head, 2)
+// 	println(a)
 
 
-	// with trees too
+// 	// with trees too
 
-	let root &Tree int
-	root = alloc(Tree int)
-	root.left = alloc(Tree int)
-	root.right = alloc(Tree int)
-	let right &Tree int
-	right = root.right
-	right.data = 60
+// 	let root &Tree int
+// 	root = alloc(Tree int)
+// 	root.left = alloc(Tree int)
+// 	root.right = alloc(Tree int)
+// 	let right &Tree int
+// 	right = root.right
+// 	right.data = 60
 
-	puts("calling get_nth()")
-	let x int
-	x = get_nth(root, 2)
-	println(x)
-	x = get_nth(head, 2)
-	println(x)
-end
+// 	puts("calling get_nth()")
+// 	let x int
+// 	x = get_nth(root, 2)
+// 	println(x)
+// 	x = get_nth(head, 2)
+// 	println(x)
+// end
 
-fn get_nth T: T iter, int n -> int
-	return T.nth(iter, n) // it'll error here if {T} not of form {A int}
-end
+// fn get_nth T: T iter, int n -> int
+// 	return T.nth(iter, n) // it'll error here if {T} not of form {A int}
+// end
 
-fn array_index
-	let head &Node int
-	let node &Node int
+// fn array_index
+// 	let head &Node int
+// 	let node &Node int
 
-	node = alloc(Node int)
-	head = node
+// 	node = alloc(Node int)
+// 	head = node
 
-	node.data = 255000
-	node.next = alloc(Node int)
-	node = node.next
+// 	node.data = 255000
+// 	node.next = alloc(Node int)
+// 	node = node.next
 
-	node.data = 13
-	node.next = alloc(Node int)
-	node = node.next
+// 	node.data = 13
+// 	node.next = alloc(Node int)
+// 	node = node.next
 
-	node.data = 72
-	node.next = alloc(Node int)
-	node = 0
+// 	node.data = 72
+// 	node.next = alloc(Node int)
+// 	node = 0
 
-	let x int
-	x = head[2]
-	println(x)
+// 	let x int
+// 	x = head[2]
+// 	println(x)
 	
-end
+// end
 
-type Arr T  // wrapper around pointers to get scaled indices
-	let ptr &T
-	fn _getref: Arr T self, int index -> &T
-		let scaled_index int
-		scaled_index = index * T:size
-		return self.ptr + scaled_index
-	end
+// type Arr T  // wrapper around pointers to get scaled indices
+// 	let ptr &T
+// 	fn _getref: Arr T self, int index -> &T
+// 		let scaled_index int
+// 		scaled_index = index * T:size
+// 		return self.ptr + scaled_index
+// 	end
 
-	fn _getitem: Arr T self, int index -> T
-		let val_ptr &T
-		val_ptr = &self[index]
-		return *val_ptr
-	end
+// 	fn _getitem: Arr T self, int index -> T
+// 		let val_ptr &T
+// 		val_ptr = &self[index]
+// 		return *val_ptr
+// 	end
 
-	fn _setitem: Arr T self, T value, int index
-		let val_ptr &T
-		val_ptr = &self[index]
-		*val_ptr = value
-	end
-end
+// 	fn _setitem: Arr T self, T value, int index
+// 		let val_ptr &T
+// 		val_ptr = &self[index]
+// 		*val_ptr = value
+// 	end
+// end
 
-type Dict K V
-	let cap int
-	let keys Arr K
-	let values Arr V
-	let used int
+// type Dict K V
+// 	let cap int
+// 	let keys Arr K
+// 	let values Arr V
+// 	let used int
 
-	// So, this is a constructor? And it works? And it's in my language? Crazy!
-	fn new: int cap -> &Dict K V
-		let out &Dict K V
-		out = alloc(Dict K V)
+// 	// So, this is a constructor? And it works? And it's in my language? Crazy!
+// 	fn new: int cap -> &Dict K V
+// 		let out &Dict K V
+// 		out = alloc(Dict K V)
 
-		out.cap = cap
-		out.keys.ptr = alloc(K, cap)
-		out.values.ptr = alloc(V, cap)
-		out.used = 0
+// 		out.cap = cap
+// 		out.keys.ptr = alloc(K, cap)
+// 		out.values.ptr = alloc(V, cap)
+// 		out.used = 0
 
-		let i int
-		i = 0
-		while i < cap
-			out.keys[i] = 0
-			out.values[i] = 0
-			i = i + 1
-		end
+// 		let i int
+// 		i = 0
+// 		while i < cap
+// 			out.keys[i] = 0
+// 			out.values[i] = 0
+// 			i = i + 1
+// 		end
 
-		return out
-	end
+// 		return out
+// 	end
 
-	fn index: &Dict K V dict, K key -> int
-		if dict == 0
-			return 0-1
-		end
+// 	fn index: &Dict K V dict, K key -> int
+// 		if dict == 0
+// 			return 0-1
+// 		end
 
-		let hash int
-		hash = K.hash(key)
+// 		let hash int
+// 		hash = K.hash(key)
 
-		let cap int
-		cap = dict.cap
+// 		let cap int
+// 		cap = dict.cap
 
-		let index int
-		index = hash % cap
+// 		let index int
+// 		index = hash % cap
 
-		let i int
-		i = 0
+// 		let i int
+// 		i = 0
 
-		// printstr("Key pointer: ")
-		// printaddr(curr_key_ref)
-		// printstr("Key:         ")
-		// printaddr(*curr_key_ref)  // compiles only if key.deref is not None
+// 		// printstr("Key pointer: ")
+// 		// printaddr(curr_key_ref)
+// 		// printstr("Key:         ")
+// 		// printaddr(*curr_key_ref)  // compiles only if key.deref is not None
 
-		let curr_key K
-		curr_key = dict.keys[index]
+// 		let curr_key K
+// 		curr_key = dict.keys[index]
 
-		// return -1 only if there's no more space
-		while curr_key != 0
-			if curr_key == key
-				return index
-			end
+// 		// return -1 only if there's no more space
+// 		while curr_key != 0
+// 			if curr_key == key
+// 				return index
+// 			end
 
-			index = index + 7
-			if index >= cap
-				index = index % cap
-			end
-			curr_key = dict.keys[index]
+// 			index = index + 7
+// 			if index >= cap
+// 				index = index % cap
+// 			end
+// 			curr_key = dict.keys[index]
 
-			i = i + 1
-			if dict.used < i
-				return 0-1
-			end
-		end
-		return index
-	end
+// 			i = i + 1
+// 			if dict.used < i
+// 				return 0-1
+// 			end
+// 		end
+// 		return index
+// 	end
 
-	fn _getref: &Dict K V self, K key -> &V
-		let index int
-		index = Dict K V.index(self, key)
-		if index < 0
-			return 0
-		end
+// 	fn _getref: &Dict K V self, K key -> &V
+// 		let index int
+// 		index = Dict K V.index(self, key)
+// 		if index < 0
+// 			return 0
+// 		end
 
-		key = self.keys[index]
-		if key == 0
-			return 0
-		end
+// 		key = self.keys[index]
+// 		if key == 0
+// 			return 0
+// 		end
 
-		return &self.values[index]
-	end
+// 		return &self.values[index]
+// 	end
 
-	fn _getitem: &Dict K V self, K key -> V
-		let ptr &V
-		ptr = &self[key]
-		if ptr == 0
-			return 0
-		end
-		return *ptr
-	end
+// 	fn _getitem: &Dict K V self, K key -> V
+// 		let ptr &V
+// 		ptr = &self[key]
+// 		if ptr == 0
+// 			return 0
+// 		end
+// 		return *ptr
+// 	end
 
-	fn _setitem: &Dict K V self, V value, K key
-		let index int
-		index = Dict K V.index(self, key)
-		if index < 0
-			return
-		end
+// 	fn _setitem: &Dict K V self, V value, K key
+// 		let index int
+// 		index = Dict K V.index(self, key)
+// 		if index < 0
+// 			return
+// 		end
 
-		let scaled_index int
+// 		let scaled_index int
 
-		let key_ptr &K
-		key_ptr = &self.keys[index]
-		if *key_ptr == 0
-			*key_ptr = key
-			self.used = self.used + 1
-		end
+// 		let key_ptr &K
+// 		key_ptr = &self.keys[index]
+// 		if *key_ptr == 0
+// 			*key_ptr = key
+// 			self.used = self.used + 1
+// 		end
 
-		self.values[index] = value
-	end
-end
+// 		self.values[index] = value
+// 	end
+// end
 
-fn noop A: A x -> A
-	return x
-end
+// fn noop A: A x -> A
+// 	return x
+// end
 
-fn dictionaries
-	puts("\nDICT START")
-	let dict &Dict str int
-	dict = Dict str int.new(1193)
+// fn dictionaries
+// 	puts("\nDICT START")
+// 	let dict &Dict str int
+// 	dict = Dict str int.new(1193)
 
-	let index int
-	index = Dict str int.index(dict, "new key")
+// 	let index int
+// 	index = Dict str int.index(dict, "new key")
 
-	Dict str int._setitem(dict, 5, "new key")
+// 	Dict str int._setitem(dict, 5, "new key")
 
-	let scaled_index int
-	scaled_index = index * int:size
-	let val_ptr &int
-	val_ptr = dict.values.ptr + scaled_index
+// 	let scaled_index int
+// 	scaled_index = index * int:size
+// 	let val_ptr &int
+// 	val_ptr = dict.values.ptr + scaled_index
 
-	puts("getref")
-	val_ptr = &dict["new key"]
-	println(*val_ptr)
+// 	puts("getref")
+// 	val_ptr = &dict["new key"]
+// 	println(*val_ptr)
 
-	let val int
-	val = dict["new key"]
-	println(val)
+// 	let val int
+// 	val = dict["new key"]
+// 	println(val)
 
-	Dict str int._setitem(dict, 6, "new key")
-	println(*val_ptr)
-	Dict str int._setitem(dict, 77, "new new key")
-	println(*val_ptr)
+// 	Dict str int._setitem(dict, 6, "new key")
+// 	println(*val_ptr)
+// 	Dict str int._setitem(dict, 77, "new new key")
+// 	println(*val_ptr)
 
-	val_ptr = &dict["new new key"]
-	println(*val_ptr)
+// 	val_ptr = &dict["new new key"]
+// 	println(*val_ptr)
 
-	puts("new new key")
-	dict["new new key"] = 5
-	println(*val_ptr)
-	printaddr(val_ptr)
-	printaddr(dict.values.ptr)
+// 	puts("new new key")
+// 	dict["new new key"] = 5
+// 	println(*val_ptr)
+// 	printaddr(val_ptr)
+// 	printaddr(dict.values.ptr)
 
-	index = Dict str int.index(dict, "new new key")
-	printstr("index = ")
-	println(index)
+// 	index = Dict str int.index(dict, "new new key")
+// 	printstr("index = ")
+// 	println(index)
 
-	dict["completely different"] = 90
-	val = dict["completely different"]
-	println(val)
+// 	dict["completely different"] = 90
+// 	val = dict["completely different"]
+// 	println(val)
 
-	val = dict["new new key"]
-	println(val)
+// 	val = dict["new new key"]
+// 	println(val)
 
-	dict["new new key"] = dict["completely different"]
-	val = dict["new new key"]
-	println(val)
-	println(*val_ptr)
-	val_ptr = &dict["new new key"]
+// 	dict["new new key"] = dict["completely different"]
+// 	val = dict["new new key"]
+// 	println(val)
+// 	println(*val_ptr)
+// 	val_ptr = &dict["new new key"]
 
-	printaddr(val_ptr)
-	index = Dict str int.index(dict, "new new key")
-	printstr("index = ")
-	println(index)
-end
+// 	printaddr(val_ptr)
+// 	index = Dict str int.index(dict, "new new key")
+// 	printstr("index = ")
+// 	println(index)
+// end
 
-fn streq_tests
-	puts("streq tests are running")
+// fn streq_tests
+// 	puts("streq tests are running")
 
-	if "hi" == "Hello"
-		puts("hi and hello are same")
-	end
+// 	if "hi" == "Hello"
+// 		puts("hi and hello are same")
+// 	end
 
-	if "hi" == "hi"
-		puts("hi and hi are same")
-	end
+// 	if "hi" == "hi"
+// 		puts("hi and hi are same")
+// 	end
 
-	if "hi" != "Hello"
-		puts("hi and hello are different")
-	end
+// 	if "hi" != "Hello"
+// 		puts("hi and hello are different")
+// 	end
 
-	if "hi" != "hi"
-		puts("hi and hi are different")
-	end
-end
+// 	if "hi" != "hi"
+// 		puts("hi and hi are different")
+// 	end
+// end
 
-fn mul_tests
-	println(2 * 4)
-	let x int
-	let y int
-	x = 2
-	y = 4
-	println(x * y)
-	println(x * Dict int int:size)
+// fn mul_tests
+// 	println(2 * 4)
+// 	let x int
+// 	let y int
+// 	x = 2
+// 	y = 4
+// 	println(x * y)
+// 	println(x * Dict int int:size)
 
-	let z int
-	z = mul_sub(x, y)
-	println(z)
-end
+// 	let z int
+// 	z = mul_sub(x, y)
+// 	println(z)
+// end
 
-fn mul_sub: int x, int y -> int
-	println(x * y)
-	return x * y
-end
+// fn mul_sub: int x, int y -> int
+// 	println(x * y)
+// 	return x * y
+// end
 
-type print_meta_wrapper A
-	fn print
-		puts(A:name)
-	end
-end
+// type print_meta_wrapper A
+// 	fn print
+// 		puts(A:name)
+// 	end
+// end
 
-fn more_meta
-	puts("MORE META")
+// fn more_meta
+// 	puts("MORE META")
 
-	let x int
-	let y x:type
+// 	let x int
+// 	let y x:type
 
-	y = 9
-	x = y
-	println(x)
+// 	y = 9
+// 	x = y
+// 	println(x)
 
-	puts(x:type)
-	puts(y:type)
+// 	puts(x:type)
+// 	puts(y:type)
 
-	print_meta_wrapper &Dict int int.print()
-	print_meta_wrapper &Dict str int.print()
-	print_meta_wrapper Dict str int.print()
+// 	print_meta_wrapper &Dict int int.print()
+// 	print_meta_wrapper &Dict str int.print()
+// 	print_meta_wrapper Dict str int.print()
 
-end
+// end
 
 extern scanf: str fmt, &any ptr -> int
 
-fn scanf_test
-	let x &char
-	x = alloc(char, 64)
-	scanf("%64s", x)
+// fn scanf_test
+// 	let x &char
+// 	x = alloc(char, 64)
+// 	scanf("%64s", x)
+// end
+
+fn ptr_char: &char c
+	printaddr(c)
+end
+
+fn str_fn: str c
+	printaddr(c)
+end
+
+fn passing_args
+	let x str
+	x = "Hello, World!"
+	ptr_char(x)
+	printaddr(x)
+
+	// let y &char
+	// y = x._ptr
+	// str_fn(y)
+	// printaddr(y)
+end
+
+type Nested T
+	// name resolution order?
+	// currently, everything sees everything all the time
+	// `Self` can just be a convenience
+	// Therefore, we won't add it yet.
+	// Modules in other files can see everything
+	// only within that file
+	// Other files that use the module can see
+	// the contents of the module through namespacing.
+	// name scope therefore will always be the current file.
+
+	type Inner U
+		let y U
+		let x &Nested.Inner T U
+
+		fn eg_fn: &Nested.Inner T U self, &Nested.Inner T T other
+			puts(self.y:type)
+			puts(other.x:type)
+		end
+	end
+
+	let g Nested.Inner T T
+	let h Nested.Inner T int
+
+	fn call_inner: &Nested T self
+		Nested.Inner T int.eg_fn(&self.h, &self.g)
+	end
+end
+
+fn nested_types
+	let nest_instance Nested &Node char
+	Nested &Node char.call_inner(&nest_instance)
 end
 
 fn main
@@ -751,6 +805,8 @@ fn main
 	// mul_tests()
 	// more_meta()
 	// scanf_test()
+	// passing_args()
+	nested_types()
 
 	// puts("Hello, World!")
 end

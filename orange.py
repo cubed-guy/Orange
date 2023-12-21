@@ -10,12 +10,16 @@
 # DONE: classmethods
 # DONE: array deref syntax
 # DONE: array assignment syntax
-# TODO: modules, import, nested typedef
+# DONE: extern
+# DONE: nested typedef
+# TODO: module imports (types are modules)
 # TODO: arrays, dictionaries, std
 # TODO: constants
+# TODO: enums?
 # TODO: check non-void return
-# TODO: a (better) way to cast variables, Exposed T, Self
+# TODO: a (better) way to cast variables, Exposed T, Self, :exposed
 # TODO: SoA support
+# TODO: inline optimisation
 
 from sys import argv
 from enum import Enum, auto
@@ -66,7 +70,7 @@ file_name = argv[1].rpartition('.')[0]
 if len(argv)<3: argv.append(file_name+'.asm')
 
 PTR_SIZE = 8
-crlf = int(Shared.arch == WIN64)
+crlf = int(Shared.arch is Arch.win64)
 
 Shared.infile = open(argv[1])
 Shared.out = open(argv[2], 'w')
@@ -82,9 +86,6 @@ def err(msg):
 
 	print(msg)
 	quit(1)
-
-def abort():
-	err('Forced Abort')
 
 class Patterns:
 	import re
@@ -207,9 +208,6 @@ add rsp, 48
 ret
 ''')
 
-# Nestless?
-# Keep it as simple as possible for now
-
 class Function_header:
 	def __init__(
 		self, name, typeargs: tuple[str], args: tuple[str, str], ret_type: str,
@@ -231,7 +229,6 @@ class Function_header:
 	def add_sub(
 		self, key: tuple[str], typeargs = (), *, isextern=False
 	) -> 'Function_instance':
-		# Need to initialise arguments as variables
 		if len(key) != len(self.typeargs):
 			err(f'Expected {len(self.typeargs)} type arguments '
 				f'to {self.name!r}. Got {len(key)}')
@@ -258,10 +255,8 @@ class Function_instance:
 				err(f'Multiple instances of argument {argname!r} for function '
 					f'{self.template.name!r}')
 
-			# TODO: update variables
 			parse_type_result = parse_type(typename, local_types, variables={})
 			if isinstance(parse_type_result, ParseTypeError):
-				# TODO: better message
 				err(f'In {typename!r}, ' + parse_type_result.__str__())
 			if len(parse_type_result) != 1:
 				err('Type expression must evaluate to exactly one type')
@@ -303,7 +298,8 @@ class Type:
 		self.args = args
 		self.parent = self
 
-		self.instances = {}
+		self.children = {}   # nested types
+		self.instances = {}  # polymorphic instances
 		self.methods = {}
 
 	def __repr__(self):
@@ -332,7 +328,9 @@ class Type:
 
 		if not args:
 			self.instances[args] = self
-			if not self.fields: return self
+			if not self.fields:
+				print('Instantiated a type that has no fields')
+				return self  # for fn_wrapper types?
 			instance = self
 			instance.size = 0
 			instance_types = types.copy()
@@ -349,27 +347,28 @@ class Type:
 		for name, field in self.fields.items():
 			T = field.type
 			if isinstance(T, str):
-				# TODO: update variables
 				parse_type_result = parse_type(T, instance_types, variables={})
+
 				if isinstance(parse_type_result, ParseTypeError):
-					err(f'In {T!r}, ' + parse_type_result.__str__())
+					err(f'Error parsing {T!r}: ' + parse_type_result.__str__())
 				if len(parse_type_result) != 1:
-					err('Declaration requires exactly one type')
+					err('Declaration requires exactly one type. '
+						f'Got {len(parse_type_result)}')
+
 				T, = parse_type_result
 
-			print(f'Added field {name!r} of {T} to instance')
 			field = Variable(name, instance.size, T, field.decl_line_no)
 			instance.fields[name] = field
 			instance.size += T.size
 
-		print('INSTANCE OF SIZE', instance.size)
 		return instance
 
 	def match_pattern(self, type_str, types) -> dict['type_arg': 'Type']:
 		type_queue = [self]
 		out_mappings = {}
-		for token in type_str.split():
+		print('Matching Pattern', self, type_str)
 
+		for token in type_str.split():
 			if not type_queue:
 				err(f'Could not match {token!r} from {type_str!r} '
 					f'to any type in {self}. '
@@ -384,28 +383,47 @@ class Type:
 				token = token[1:]
 			elif expected_type.deref is not None:
 				if token in types:
-					print(f'{types[token] = }, {expected_type = }')
+					print(f'  {types[token] = }, {expected_type = }')
 					if types[token].deref == expected_type.deref:
 						expected_type = types[token]
 
+			# What to do for T.child_type if T is polymorphic?
+			# it can be the same type, but have different parents
+			# eg multiple files import the same module
+			token, *children = token.split('.')
+
 			if token not in types:
+				# token is a polymorphic type
+				if children:
+					# TODO: suppress error if a mapping is already made
+					err('Cannot use children of a polymorphic type')
+
 				if token not in out_mappings:
 					out_mappings[token] = expected_type
-				elif out_mappings[token] is (UNSPECIFIED_TYPE, None):
+				elif out_mappings[token] is UNSPECIFIED_TYPE:
 					out_mappings[token] = expected_type
 				elif expected_type is ANY_TYPE:
 					out_mappings[token] = expected_type
+
 				elif out_mappings[token] is not expected_type:
 					err('Multiple mappings to same argument. '
 						f'Trying to map {token!r} to '
 						f'{expected_type} and {out_mappings[token]}')
-			elif types[token] not in (ANY_TYPE, expected_type.parent):
-				# err(f'{expected_type} did not match {token!r} in {type_str!r}')
-				err(f'Pattern match of {expected_type} failed for '
-					f'{type_str!r} at {token!r}')
 			else:
-				type_queue.extend(expected_type.args)
-			# TODO: append to type_queue
+				# token is a concrete type
+				evaluated_type = types[token]
+				for child in children:
+					if child not in evaluated_type.children:
+						err(f'{child!r} is not defined in {evaluated_type!r}')
+
+					evaluated_type = evaluated_type.children[child]
+
+				if evaluated_type not in (ANY_TYPE, expected_type.parent):
+					# err(f'{expected_type} did not match {token!r} in {type_str!r}')
+					err(f'Pattern match of {expected_type} failed for '
+						f'{type_str!r} at {token!r}')
+				else:
+					type_queue.extend(expected_type.args)
 
 		return out_mappings
 
@@ -550,9 +568,12 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 
 	print(f'PARSE TYPE {type_str!r} -> {type_tokens}')
 
-	token, _, field = root_token.rpartition(':')
+	token, _, rhs = root_token.rpartition(':')
+	field, *children = rhs.split('.')
+
 	if token:
 		print(f'Type meta:  {token = }, {field = }')
+
 
 		if field == 'type':
 			_insts, _clause, exp_type = parse_token(token, types,
@@ -570,6 +591,13 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 			return ParseTypeError(f'{T!r} is not defined')
 		else:
 			T = types[T]
+
+	for child in children:
+		print(f'Getting {T!r}.{child}')
+		if child not in T.children:
+			err(f'{child!r} is not defined in {T!r}')
+
+		T = T.children[child]
 
 	if len(type_tokens) > 1:
 		args = parse_type(type_tokens[1], types, variables=variables)
@@ -1370,22 +1398,64 @@ else:
 	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
 in_function = False
+curr_type_dict = types
+type_stack = []
 curr_type = None
 scope_level = 0
 
+print('PASS 1')
+
 tell = 0
-for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
+for Shared.line_no, Shared.line in enumerate(Shared.infile, 1):
 	tell += len(Shared.line) + crlf
 	match = Patterns.stmt.match(Shared.line)
 	line = match[2]
 
 	match = Patterns.split_word.match(line)
 
-	if curr_type is not None and not in_function:
-		if match[1] == 'type':
-			err('Recursive types are not supported')
+	if not match: continue
+	elif match[1] == 'type':
+		print('[P1] New type')
 
+		if in_function: err('Local type definitions are not yet supported')
+
+		name, *args = match[2].split()
+		# if args: err('Polymorphic types are not yet supported')
+
+		if name in curr_type_dict: err(f'Type {name!r} already defined')
+
+		if curr_type is None:
+			curr_type = Type(name, args = args)
+		else:
+			curr_type = Type(
+				curr_type.name + '.' + name, args = curr_type.args + args
+			)
+
+		type_stack.append(curr_type)
+		curr_type_dict[name] = curr_type
+		curr_type_dict = curr_type.children
+		print('NEW TYPE', curr_type)
+
+		# scope_level += 1  # scope level goes up and down only if in_function
+
+		# if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
+		# 	if pointer:
+		# 		T = '&' + T
+		# else:
+		# 	T = types[T]
+		# 	if pointer:
+		# 		T = T.pointer()
+
+		# if T is curr_type:
+		# 	err(f'Recursive declaration. ({T} within {T})')
+
+		# if T is ANY_TYPE:
+		# 	err("A variable of type 'any' must be a pointer")
+
+
+	elif type_stack and not in_function:
 		if match[1] == 'let':
+			print(f'[P1] New field in {curr_type!r}')
 			match = Patterns.split_word.match(match[2])
 			name = match[1]
 			T = match[2]
@@ -1406,6 +1476,8 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 					curr_type.size += T.size
 
 		elif match[1] == 'fn':  # methods
+			print(f'[P1] New method in {curr_type!r}')
+
 			# name typeargs : type arg, comma separated
 			pre, arrow, ret_type = match[2].partition('->')
 			pre, _, args = pre.partition(':')
@@ -1424,52 +1496,67 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 
 			fn = Function_header(f'{curr_type.name}.{name}',
 				(*typeargs, *curr_type.args),  # curr_type.args may have Type objects?
-				tuple(arg.rsplit(maxsplit=1) for arg in args),
+				tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 				ret_type, tell, Shared.line_no
 			)
 			print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
 			curr_type.methods[name] = fn
 
 			in_function = True
-			scope_level += 1
+			scope_level = 1
 
 		elif match[1] == 'end':
-			print('After definition:')
+			print(f'[P1] End of {curr_type!r}')
 			for name, field in curr_type.fields.items():
 				print(name, field.type)
-			curr_type = None
-			scope_level -= 1
+			type_stack.pop()  # no need to check emptiness.
 
-	elif not match: continue
-	elif match[1] == 'type':
-		if scope_level: err('Local type definitions are not yet supported')
+			if type_stack:
+				curr_type = type_stack[-1]
+				curr_type_dict = curr_type.children
+			else:
+				curr_type = None
+				curr_type_dict = types
 
-		name, *args = match[2].split()
-		# if args: err('Polymorphic types are not yet supported')
+		elif match[1] == 'extern':  # gets added to be linked
+			# syntax extern name: type arg -> ret
 
-		if name in types: err(f'Type {name!r} already defined')
-		curr_type = Type(name, args = args)
-		types[name] = curr_type
-		print('NEW TYPE', curr_type)
+			if in_function:
+				err('Local functions are not supported')
 
-		scope_level += 1
+			# name typeargs : type arg, comma separated
+			pre, arrow, ret_type = match[2].partition('->')
+			pre, _, args = pre.partition(':')
+			name, *typeargs = pre.split()
+			args = args.strip()
+			args = args.split(',')
+			if args[-1] == '': args.pop()
 
-		# if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
-		# 	if pointer:
-		# 		T = '&' + T
-		# else:
-		# 	T = types[T]
-		# 	if pointer:
-		# 		T = T.pointer()
+			if not arrow: ret_type = 'void'
+			else: ret_type = ret_type.strip()
 
-		# if T is curr_type:
-		# 	err(f'Recursive declaration. ({T} within {T})')
+			# print(repr(line), name, typeargs, args, ret_type, sep = ',\t')
 
-		# if T is ANY_TYPE:
-		# 	err("A variable of type 'any' must be a pointer")
+			if name in function_headers:
+				err(f'Function {name!r} already defined.')
+
+			fn = Function_header(f'{curr_type.name}.{name}',
+				(*typeargs, *curr_type.args),  # curr_type.args may have Type objects?
+				tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
+				ret_type, tell, Shared.line_no
+			)
+			print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+			curr_type.methods[name] = fn
+
+			fn.add_sub((), isextern=True)
+			output('extern', name)
+
+
+	# else: not (type_stack and not in_function) == not type_stack or in_function
 
 	elif match[1] == 'fn':  # function header
-		if scope_level:
+		print(f'[P1] New function')
+		if in_function:
 			err('Local functions are not supported')
 
 		# name typeargs : type arg, comma separated
@@ -1489,7 +1576,8 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 			err(f'Function {name!r} already defined.')
 
 		fn = Function_header(
-			name, (*typeargs,), tuple(arg.rsplit(maxsplit=1) for arg in args),
+			name, (*typeargs,),
+			tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 			ret_type, tell, Shared.line_no
 		)
 		print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
@@ -1503,21 +1591,26 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 		scope_level += 1
 
 	elif match[1] in ('if', 'while'):
+		print(f'[P1] Enter construct')
+
 		scope_level += 1
 
 	elif match[1] == 'end':
+		# first part handled by match[1] == 'type'
+		# (type > ... > type) > fn > cond > cond > ...
 		scope_level -= 1
 		if scope_level < 0:
 			err('end statement does not match any block')
-		elif scope_level == 1 and in_function and curr_type is not None:
-			in_function = False
 		elif scope_level == 0:
+			print(f'[P1] End function')
 			in_function = False
+		else:
+			print(f'[P1] Exit construct')
 
 	elif match[1] == 'extern':  # gets added to be linked
 		# syntax extern name: type arg -> ret
 
-		if scope_level:
+		if in_function:
 			err('Local functions are not supported')
 
 		# name typeargs : type arg, comma separated
@@ -1537,7 +1630,8 @@ for Shared.line_no, Shared.line, in enumerate(Shared.infile, 1):
 			err(f'Function {name!r} already defined.')
 
 		fn = Function_header(
-			name, (*typeargs,), tuple(arg.rsplit(maxsplit=1) for arg in args),
+			name, (*typeargs,),
+			tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 			ret_type, tell, Shared.line_no
 		)
 		print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
@@ -1919,9 +2013,9 @@ if Shared.link:
 	else:
 		linker = 'gcc'
 
-	if Shared.arch == Arch.win64:
+	if Shared.arch is Arch.win64:
 		bin_extension = '.exe'
-	elif Shared.arch == Arch.elf64:
+	elif Shared.arch is Arch.elf64:
 		bin_extension = ''
 	else:
 		raise TypeError(f'Unsupported architecture {Shared.arch!r}')
@@ -1931,5 +2025,3 @@ if Shared.link:
 if commands:
 	cmd = ' && '.join(commands)
 	result = system(cmd)
-	print('Assembling using', repr(cmd))
-	print('Linking result =', result)
