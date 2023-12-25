@@ -1,0 +1,177 @@
+// contains all builtin functions, helper functions
+// and useful container types
+
+extern free: &any ptr
+extern puts: str s
+
+fn printf T: str fmt, T arg -> int
+	return T.printf(fmt, arg)
+end
+
+fn print T: T arg
+	T._print(arg)
+end
+
+fn println T: T arg
+	T._print(arg)
+	puts("")
+end
+
+type UnboundArr T
+	let _ptr &T
+
+	fn _getref: UnboundArr T self, int n -> &T
+		let scaled_index int
+		scaled_index = n * self:type:size
+		return self._ptr + scaled_index
+	end
+
+	fn _getitem: UnboundArr T self, int n -> T
+		let out &T
+		out = &self[n]
+		return *out
+	end
+
+	fn _setitem: UnboundArr T self, T value, int n
+		let ref &T
+		ref = &self[n]
+		*ref = value
+	end
+end
+
+type Arr T
+	let _arr UnboundArr T
+	let len int
+
+	fn _getref: &Arr T self, int n -> &T
+		return &self._arr[n]
+	end
+
+	fn _getitem: &Arr T self, int n -> T
+		let out &T
+		out = &self._arr[n]
+		return *out
+	end
+
+	fn _setitem: &Arr T self, T value, int n
+		let ref &T
+		ref = &self._arr[n]
+		*ref = value
+	end
+end
+
+type Dict K V
+	let cap int
+	let keys UnboundArr K
+	let values UnboundArr V
+	let used int
+
+	// So, this is a constructor? And it works? And it's in my language? Crazy!
+	fn new: int cap -> &Dict K V
+		let out &Dict K V
+		out = alloc(Dict K V)
+
+		out.cap = cap
+		out.keys._ptr = alloc(K, cap)
+		out.values._ptr = alloc(V, cap)
+		out.used = 0
+
+		let i int
+		i = 0
+		while i < cap
+			out.keys[i] = 0
+			out.values[i] = 0
+			i = i + 1
+		end
+
+		return out
+	end
+
+	fn index: &Dict K V dict, K key -> int
+		if dict == 0
+			return 0-1
+		end
+
+		let hash u64
+		hash = K._hash(key)
+
+		let cap int
+		cap = dict.cap
+
+		let index int
+		index = hash % cap
+
+		let i int
+		i = 0
+
+		// printstr("Key pointer: ")
+		// printaddr(curr_key_ref)
+		// printstr("Key:         ")
+		// printaddr(*curr_key_ref)  // compiles only if key.deref is not None
+
+		let curr_key K
+		curr_key = dict.keys[index]
+
+		// return -1 only if there's no more space
+		while curr_key != 0
+			if curr_key == key
+				return index
+			end
+
+			index = index + 7
+			if index >= cap
+				index = index % cap
+			end
+			curr_key = dict.keys[index]
+
+			i = i + 1
+			if dict.used < i
+				return 0-1
+			end
+		end
+		return index
+	end
+
+	fn _getref: &Dict K V self, K key -> &V
+		let index int
+		index = Dict K V.index(self, key)
+		if index < 0
+			return 0
+		end
+
+		key = self.keys[index]
+		if key == 0
+			return 0
+		end
+
+		return &self.values[index]
+	end
+
+	fn _getitem: &Dict K V self, K key -> V
+		let ptr &V
+		ptr = &self[key]
+		if ptr == 0
+			return 0
+		end
+		return *ptr
+	end
+
+	fn _setitem: &Dict K V self, V value, K key
+		let index int
+		index = Dict K V.index(self, key)
+		if index < 0
+			return
+		end
+
+		let scaled_index int
+
+		let key_ptr &K
+		key_ptr = &self.keys[index]
+		if *key_ptr == 0
+			*key_ptr = key
+			self.used = self.used + 1
+		end
+
+		self.values[index] = value
+	end
+end

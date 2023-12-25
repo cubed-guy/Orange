@@ -13,7 +13,8 @@
 # DONE: extern
 # DONE: nested typedef
 # DONE: module imports (modules are types)
-# TODO: arrays, dictionaries, std
+# DONE: arrays, dictionaries, std
+# TODO: SDL bindings
 # TODO: constants
 # TODO: enums?
 # TODO: check non-void return
@@ -27,6 +28,9 @@ from enum import Flag as Enum_flag
 from typing import Union, Optional
 from os import system
 import os.path
+
+core_file = open('lib/core.or')
+std_file = open('lib/std.or')
 
 class Shared:
 	debug = True
@@ -132,33 +136,11 @@ class ParseTypeError(ValueError):
 
 output(r'''
 global main
-extern printf
-extern puts
 extern strcmp
 extern malloc
-extern free
 extern exit
 
 segment .text
-_0print:
-sub rsp, 48
-
-mov rdx, rcx
-mov rcx, _p
-xor rax, rax
-call printf
-
-add rsp, 48
-ret
-
-_0puts:
-sub rsp, 32
-
-call puts
-
-add rsp, 32
-ret
-
 _0alloc:
 sub rsp, 32
 
@@ -166,53 +148,12 @@ call malloc
 
 add rsp, 32
 ret
-
-_0free:
-sub rsp, 32
-
-call free
-
-add rsp, 32
-ret
-
-_0println:
-sub rsp, 48
-
-mov rdx, rcx
-mov rcx, _pln
-xor rax, rax
-call printf
-
-add rsp, 48
-ret
-
-_0printstr:
-sub rsp, 48
-
-mov rdx, rcx
-mov rcx, _pstr
-xor rax, rax
-call printf
-
-add rsp, 48
-ret
-
-_0printaddr:
-sub rsp, 48
-
-mov rdx, rcx
-mov rcx, _paddr
-xor rax, rax
-call printf
-
-add rsp, 48
-ret
 ''')
 
 class Function_header:
 	def __init__(
 		self, name, typeargs: tuple[str], args: tuple[str, str], ret_type: str,
-		module, tell, line_no, infile=None
+		module, tell, line_no, infile=None, isextern=False
 	):
 		self.name = name
 		self.typeargs = typeargs
@@ -223,6 +164,7 @@ class Function_header:
 		self.tell = tell
 		self.line_no = line_no
 		self.infile = infile
+		self.isextern = isextern
 
 		self.instances = {}
 
@@ -231,24 +173,26 @@ class Function_header:
 				err(f'Invalid syntax {" ".join(arg_entry)!r}. '
 					'Expected exactly 2 words for arg entry.')
 
-	def add_sub(
-		self, key: tuple[str], typeargs = (), *, isextern=False
-	) -> 'Function_instance':
+	def __repr__(self):
+		return (
+			f'Function_header<{self.name!r} '
+			f'in {self.infile and self.infile.name!r} '
+			f'at line {self.line_no} (tell = {self.tell})>'
+		)
+
+	def add_sub(self, key: tuple[str], typeargs = ()) -> 'Function_instance':
 		if len(key) != len(self.typeargs):
 			err(f'Expected {len(self.typeargs)} type arguments '
 				f'to {self.name!r}. Got {len(key)}')
 
-		fn_instance = Function_instance(
-			self, typeargs, len(self.instances), isextern
-		)
+		fn_instance = Function_instance(self, typeargs, len(self.instances))
 		self.instances[key] = fn_instance
 		return fn_instance
 
 class Function_instance:
-	def __init__(self, template, typeargs: list[str], id, isextern):
+	def __init__(self, template, typeargs: list[str], id):
 		self.template = template
 		self.id = id
-		self.isextern = isextern
 		self.type_mappings = dict(zip(template.typeargs, typeargs))
 		self.variables = {}
 		self.offset = 0
@@ -273,7 +217,7 @@ class Function_instance:
 			)
 
 	def mangle(self):
-		if self.isextern: return self.template.name
+		if self.template.isextern: return self.template.name.rpartition('.')[2]
 		return f'_{self.id}{self.template.name}'
 
 class Variable:  # Instantiated when types are known
@@ -322,26 +266,30 @@ class Type:
 
 
 	@classmethod
-	def read_module(cls, name, infile, *, args=(), in_module=True):
+	def read_module(cls, name, *, args=(), in_module=True):
+		'''
+		in_module=false means assume this as the root namespace... sort of
+		'''
+
+		global core_module
+
 		# First pass, get the declarations
-		print(f'PASS 1 on {infile.name!r}')
+		print(f'\nPASS 1 on {Shared.infile.name!r}')
 
 		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
-		out_mod.children = std_types.copy()
+
+		if core_module is None:
+			alloc_fn = Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0)
+			alloc_fn.add_sub(())
+
+			out_mod.methods |= {'alloc': alloc_fn}
+		else:
+			out_mod.methods = core_module.methods.copy()
+			out_mod.children = builtin_types.copy()
+
+			print('Inherited core types:', out_mod.children)
+
 		curr_type_dict = out_mod.children
-
-		out_mod.methods = {
-			'print': Function_header('print', (), (('int', 'n'),), 'void', out_mod, 0, 0),
-			'println': Function_header('println', (), (('int', 'n'),), 'void', out_mod, 0, 0),
-			'printstr': Function_header('printstr', (), (('str', 's'),), 'void', out_mod, 0, 0),
-			'printaddr': Function_header('printaddr', (), (('&any', 'p'),), 'void', out_mod, 0, 0),
-			'puts': Function_header('puts', (), (('str', 's'),), 'void', out_mod, 0, 0),
-			'alloc': Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0),
-			'free': Function_header('free', (), (('&any', 'p'),), 'void', out_mod, 0, 0),
-		}
-
-		for fn in out_mod.methods.values():
-			fn.add_sub(())
 
 		curr_type = out_mod
 		type_stack = []
@@ -350,7 +298,7 @@ class Type:
 		scope_level = 0
 
 		tell = 0
-		for Shared.line_no, Shared.line in enumerate(infile, 1):
+		for Shared.line_no, Shared.line in enumerate(Shared.infile, 1):
 			tell += len(Shared.line) + crlf
 			match = Patterns.stmt.match(Shared.line)
 			line = match[2]
@@ -373,8 +321,6 @@ class Type:
 				else:
 					qual_name = name
 				
-				print(f'{curr_type_dict == curr_type.children = }')
-
 				curr_type = Type(qual_name, args = curr_type.args + tuple(args))
 
 				type_stack.append(curr_type)
@@ -400,7 +346,7 @@ class Type:
 				# 	err("A variable of type 'any' must be a pointer")
 
 			elif match[1] == 'import':
-				print('[P1] New type')
+				print('[P1] Import')
 
 				if in_function: err('Local type definitions are not yet supported')
 
@@ -417,6 +363,7 @@ class Type:
 					err(f'Cannot import module. Path not found: {mod_path!r}')
 
 				module_file = open(absolute_path.decode('utf-8'))
+				infile = Shared.infile
 				Shared.infile = module_file
 
 				if in_module or curr_type is not out_mod:
@@ -425,7 +372,7 @@ class Type:
 					qual_name = name
 
 				module = Type.read_module(
-					qual_name, infile=module_file, args = curr_type.args
+					qual_name, args = curr_type.args
 				)
 
 				Shared.infile = infile
@@ -433,7 +380,7 @@ class Type:
 				print('NEW MODULE', module)
 
 			elif match[1] == 'fn':  # function header
-				print(f'[P1] New function')
+				# print(f'[P1] New function')
 				if in_function:
 					err('Local functions are not supported')
 
@@ -461,9 +408,9 @@ class Type:
 				fn = Function_header(
 					qual_name, (*typeargs, *curr_type.args),
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-					ret_type, out_mod, tell, Shared.line_no, infile
+					ret_type, out_mod, tell, Shared.line_no, Shared.infile
 				)
-				print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+				print(f'NEW FUNCTION HEADER {fn}: {fn.args = }')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -499,17 +446,17 @@ class Type:
 				fn = Function_header(
 					qual_name, (*typeargs, *curr_type.args),
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-					ret_type, out_mod, tell, Shared.line_no, infile
+					ret_type, out_mod, None, Shared.line_no, Shared.infile,
+					isextern = True
 				)
-				print(f'NEW FUNCTION HEADER {name}: {fn.args = }')
+				print(f'NEW EXTERN {name}: {fn.args = }')
 				curr_type.methods[name] = fn
 
-				fn.add_sub((), isextern=True)
 				output('extern', name)
 
 			elif type_stack and not in_function:
 				if match[1] == 'let':
-					print(f'[P1] New field in {curr_type!r}')
+					# print(f'[P1] New field in {curr_type!r}')
 					match = Patterns.split_word.match(match[2])
 					name = match[1]
 					T = match[2]
@@ -519,20 +466,36 @@ class Type:
 						err(f'Field {name!r} already declared in '
 							f'line {var.decl_line_no}')
 
+					parse_type_result = parse_type(
+						T, out_mod.children,
+						variables=curr_type.fields
+					)
+
+					if not isinstance(parse_type_result, ParseTypeError):
+						T, = parse_type_result
+						print('GOT REAL TYPE')
+					else:
+						print('GOT FAKE TYPE')
+
 					curr_type.fields[name] = (
 						Variable(name, curr_type.size, T, Shared.line_no)
 					)
 					print(f'  Created a field {name!r} of {T}')
 					if curr_type.size is not None:
-						if not isinstance(T, Type):
-							curr_type.size = None
-						else:
+						if isinstance(T, Type):
+							print('curr_type.size:', f'Adding {T.size} to size')
 							curr_type.size += T.size
+						else:
+							print('curr_type.size:', f'Setting size to None')
+							curr_type.size = None
+					else:
+						print('curr_type.size:', 'Size is already None')
 
 				elif match[1] == 'end':
-					print(f'[P1] End of {curr_type!r}')
+					print(f'[P1] End of {curr_type!r}, size = {curr_type.size}')
 					for name, field in curr_type.fields.items():
-						print(name, field.type)
+						print('   ', name, field.type)
+					print()
 					type_stack.pop()  # no need to check emptiness.
 
 					if type_stack: curr_type = type_stack[-1]
@@ -554,10 +517,12 @@ class Type:
 				if scope_level < 0:
 					err('end statement does not match any block')
 				elif scope_level == 0:
-					print(f'[P1] End function')
+					# print(f'[P1] End function')
 					in_function = False
-				else:
-					print(f'[P1] Exit construct')
+				# else:
+				# 	print(f'[P1] Exit construct')
+
+		print('Module functions:', *out_mod.methods)
 
 		return out_mod
 
@@ -565,20 +530,29 @@ class Type:
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		global types
 
+		if self is PTR_TYPE:
+			print('GETTING PTR INSTANCE:', args)
+
 		if self.parent is not self:
+			if args:
+				err('Cannot instantiate with arguments if already instantiated')
 			return self
 
 		if len(args) != len(self.args):
 			err(f'{self} expects {len(self.args)} polymorphic arguments. '
-				f'Got {len(args)}.')
+				f'Got {len(args)}: {args}.')
+
+		print('INSTANTIATE TYPE', self)
 
 		if args in self.instances:
 			return self.instances[args]
 
 		if not args:
+			# not polymorphic
+
 			self.instances[args] = self
 			if not self.fields:
-				print('Instantiated a type that has no fields')
+				print('Instantiated a type that has no fields, size =', self.size, [self])
 				return self  # for fn_wrapper types?
 			instance = self
 			instance.size = 0
@@ -593,13 +567,15 @@ class Type:
 			instance.methods = self.methods
 			self.instances[args] = instance
 
+		print('GET INSTANCE FIELDS OF', self, self.fields)
+
 		for name, field in self.fields.items():
 			T = field.type
 			if isinstance(T, str):
 				parse_type_result = parse_type(T, instance_types, variables={})
 
 				if isinstance(parse_type_result, ParseTypeError):
-					err(f'Error parsing {T!r}: ' + parse_type_result.__str__())
+					err(f'Error parsing {T!r}: {parse_type_result}')
 				if len(parse_type_result) != 1:
 					err('Declaration requires exactly one type. '
 						f'Got {len(parse_type_result)}')
@@ -628,6 +604,7 @@ class Type:
 			if token.startswith('&'):
 				if expected_type.deref is None:
 					err(f'{expected_type!r} does not have deref for {token!r}')
+				print(f'deref: {token!r} -> {token[1:]!r}; {expected_type} -> {expected_type.deref}')
 				expected_type = expected_type.deref
 				token = token[1:]
 			elif expected_type.deref is not None:
@@ -682,8 +659,16 @@ class Type:
 
 	def pointer(self):
 		if self.ref is not None: return self.ref
-		self.ref = self.__class__('&' + self.name, PTR_SIZE, None)
+
+		self.ref = PTR_TYPE.get_instance((self,))
+		self.ref.name = '&' + self.name
 		self.ref.deref = self
+		self.ref.size = PTR_TYPE.size
+
+		print('POINTER created:', self.ref)
+		print('POINTER size:   ', self.ref.size)
+		print('POINTER methods:', self.ref.methods)
+
 		# print(self.ref, 'has a deref of', self)
 		return self.ref
 
@@ -819,7 +804,7 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 
 	root_token = type_tokens[0]
 
-	print(f'PARSE TYPE {type_str!r} -> {type_tokens}')
+	# print(f'PARSE TYPE {type_str!r}.split() = {type_tokens}')
 
 	token, _, rhs = root_token.rpartition(':')
 	field, *children = rhs.split('.')
@@ -837,35 +822,39 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 		T = exp_type
 		if T is UNSPECIFIED_TYPE:
 			T = INT_TYPE
+
 	else:
 		T = field
 		if T not in types:
 			print(repr(T), 'not in', types)
-			return ParseTypeError(f'{T!r} is not defined')
+			return ParseTypeError(f'Type {T!r} is not defined')
 		else:
 			T = types[T]
 
 	for child in children:
-		print(f'Getting {T!r}.{child}')
+		print(f'Getting child {T!r}.{child}')
 		if child not in T.children:
-			err(f'{child!r} is not defined in {T!r}')
+			err(f'Type {child!r} is not defined in {T!r}')
 
 		T = T.children[child]
+
+	# print(f'PARSE CONVERT {root_token!r} -> {T}')
 
 	if len(type_tokens) > 1:
 		args = parse_type(type_tokens[1], types, variables=variables)
 		if isinstance(args, ParseTypeError): return args
+		print(f'PARSETYPE RECURSION with {type_tokens[1]!r} yielded {args}')
 	else:
 		args = []
 
-	if T.args is None:
-		return [T] + args
-	args_len = len(T.args)
+	if T.parent is not T: args_len = 0
+	else: args_len = len(T.args)
+
+	# print('PARSETYPE getting instance with', args_len, 'args:', args)
 
 	instance = T.get_instance(tuple(args[:args_len]))
 	if pointer: instance = instance.pointer()
-	if instance is None:
-		err(f'Instance is None on {T}.get_instance({args[:args_len]})')
+
 	args[:args_len] = instance,
 	return args
 
@@ -1171,6 +1160,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 # muddles rbx if dest_reg is Flag
 def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 	# extract call_function(fn, args)
+	print(f'PARSE EXP: {exp!r}')
 
 	global types, fn_types
 
@@ -1370,14 +1360,11 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		# if caller_type.deref is not None:
 		# 	caller_type = caller_type.deref
 
+		print('PARSED TYPE FOR METHOD:', caller_type)
+
 		# NOTE: Temp
-		if fn_name == 'hash':  # fn_name in default_methods
-			if dest_reg is Flag:
-				output('test rcx, rcx')
-				return Flags.nz
-			output('mov rax, rcx')
-			return INT_TYPE
-		elif fn_name not in caller_type.methods:
+		if fn_name not in caller_type.methods:
+			print(f'TYPE {caller_type} HAS NO SUCH METHOD {fn_name!r}')
 			# check for deref only if method doesn't exist
 			if caller_type.deref is not None:
 				caller_type = caller_type.deref
@@ -1401,7 +1388,7 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		fl = len(fn_header.args)
 		al = len(arg_types)
 
-		err(f'{fn_header.name!r} expects exactly '
+		err(f'{fn_header!r} expects exactly '
 			f'{fl} argument{"s" * (fl != 1)}, '
 			f'but {al} {"were" if al != 1 else "was"} provided')
 
@@ -1413,14 +1400,21 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		)
 	print('TYPE MAPPING USING', fn_header.args, 'AND', arg_types)
 	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
+
 		if arg_type is not UNSPECIFIED_TYPE:
 			curr_mappings = arg_type.match_pattern(type_str, types)
-		elif parse_type(type_str, types, variables=variables) is None:
-			# don't update mappings
-			if len(type_str.split(maxsplit=1)) > 1: continue
-			# We have to expect UNSPECIFIED_TYPE in the for loop
-			curr_mappings = {type_str.lstrip(): UNSPECIFIED_TYPE}
-		else: continue  # parse_type is not None, so it won't change
+		else:
+			parse_type_result = parse_type(type_str, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				print('NOT MAPPED, UNSPECIFIED')
+
+				# don't update mappings
+				if len(type_str.split(maxsplit=1)) > 1: continue
+				# We have to expect UNSPECIFIED_TYPE in the for loop
+				curr_mappings = {type_str.lstrip(): UNSPECIFIED_TYPE}
+			else:
+				print('MAPPED, UNSPECIFIED')
+				continue  # parse_type is not None, so it won't change
 
 		for type_arg, matched_type in curr_mappings.items():
 			if type_arg not in type_mappings:
@@ -1447,12 +1441,14 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 	except AttributeError:
 		for typearg_name in fn_header.typeargs:
 			if type_mappings[typearg_name] is not None: continue
-			err(f'Type argument {typearg_name!r} not mapped in {fn_header.name!r}')
+			err(f'Type argument {typearg_name!r} not mapped in {fn_header!r}')
 		err('[Internal Error] All types mapped but still got a TypeError')
 
 	if instance_key in fn_header.instances:
+		print('Queued and done', (fn_header, instance_key))
 		fn_instance = fn_header.instances[instance_key]
 	else:
+		print('Adding to queue', (fn_header, instance_key))
 		fn_queue.append((fn_header, instance_key))
 		fn_instance = fn_header.add_sub(
 			instance_key, (*type_mappings.values(),)
@@ -1571,13 +1567,13 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 
 	if operator in '+-':
 		if l_type.deref is not None and r_type.deref is None:
-			if r_type not in (INT_TYPE, UNSPECIFIED_TYPE):
+			if r_type not in (U64_TYPE, INT_TYPE, UNSPECIFIED_TYPE):
 				err(f'Cannot offset a pointer using {r_type}')
 			return l_type
 
 	if operator == '+':
 		if r_type.deref is not None and l_type.deref is None:
-			if l_type not in (INT_TYPE, UNSPECIFIED_TYPE):
+			if l_type not in (U64_TYPE, INT_TYPE, UNSPECIFIED_TYPE):
 				err(f'Cannot offset a pointer using {l_type}')
 			return r_type
 
@@ -1588,9 +1584,9 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 	if operator == '==': return Flag.e
 	if operator == '!=': return Flag.ne
 
-	if l_type not in builtin_types:
+	if l_type not in builtin_type_set:
 		err(f'Cannot use operator {operator!r} on custom type {l_type}')
-	if r_type not in builtin_types:
+	if r_type not in builtin_type_set:
 		err(f'Cannot use operator {operator!r} on custom type {r_type}')
 
 	if operator == '>':  return Flag.g
@@ -1601,10 +1597,16 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 	if UNSPECIFIED_TYPE in (l_type, r_type):
 		return UNSPECIFIED_TYPE
 
+	if l_type is not r_type:
+		return UNSPECIFIED_TYPE
+
+	if U64_TYPE in (l_type, r_type):
+		return U64_TYPE
+
 	if INT_TYPE in (l_type, r_type):
 		return INT_TYPE
 
-	return types['char']
+	return CHAR_TYPE
 
 def get_string_label(string, strings):
 	if string in strings: return strings[string]
@@ -1620,27 +1622,60 @@ else:
 	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
 # Builtins
-std_types = {
-	'str': Type('str', 8),
-	'int': Type('int', 4),
-	'char': Type('char', 1),
-	'void': Type('void', 0),
-	'any': Type('any', None),
-}
-ANY_TYPE = std_types['any']
-INT_TYPE = std_types['int']
-STR_TYPE = std_types['str']
-STR_TYPE.deref = std_types['char']
-STR_TYPE.fields['_ptr'] = Variable('_ptr', 0, std_types['char'].pointer(), -1)
 
-builtin_types = {*std_types.values(), UNSPECIFIED_TYPE, FLAG_TYPE}
+PTR_TYPE = Type('_ptr', PTR_SIZE, args=('T',))
+PTR_TYPE.size = 8
 
-for builtin_type in std_types.values():
-	for method in builtin_type.methods.values():
-		method.add_sub(())
+infile = Shared.infile
+Shared.infile = core_file
+
+types = {}
+core_module = None
+
+core_module = Type.read_module('_core', in_module=False)
+
+builtin_types = core_module.children
+
+CORE_PTR_TYPE = core_module.children['_ptr']
+
+# modify the dict so it effects existing instances
+PTR_TYPE.methods |= CORE_PTR_TYPE.methods
+
+builtin_types['any'] = Type('any', None)
+ANY_TYPE = builtin_types['any']
+
+U64_TYPE = builtin_types['u64']
+U64_TYPE.size = 8
+print('FORCE SET SIZE = 0 [U64]')
+
+VOID_TYPE = builtin_types['void']
+VOID_TYPE.size = 0
+print('FORCE SET SIZE = 0 [VOID]')
+
+CHAR_TYPE = builtin_types['char']
+CHAR_TYPE.size = 1
+print('FORCE SET SIZE = 1 [CHAR]')
+
+INT_TYPE = builtin_types['int']
+INT_TYPE.size = 4
+print('FORCE SET SIZE = 4 [INT]')
+
+STR_TYPE = builtin_types['str']
+STR_TYPE.deref = CHAR_TYPE
+
+print('STR_TYPE size =', STR_TYPE.size)
+
+builtin_type_set = {*builtin_types.values(), UNSPECIFIED_TYPE, FLAG_TYPE}
 
 
-main_module = Type.read_module('main', Shared.infile, in_module=False)
+Shared.infile = std_file
+std_module = Type.read_module('_std', in_module=False)
+
+core_module.methods |= std_module.methods
+core_module.children |= std_module.children
+
+Shared.infile = infile
+main_module = Type.read_module('_main', in_module=False)
 
 if 'main' not in main_module.methods:
 	err("No definition of function 'main' found.")
@@ -1655,12 +1690,21 @@ ctrl_no = 0
 while fn_queue:
 	fn, instance_key = fn_queue.pop(0)
 	fn_instance = fn.instances[instance_key]
+
+	if fn_instance.template.isextern:
+		print(f'DEQUEUED EXTERN {fn}, {instance_key}')
+		continue
+	else:
+		print('DEQUEUED Function', fn)
+
 	# fn_instance = fn.add_sub(instance_key)
 	# if fn_instance is None: continue
 
 	# 2 passes. allocate variable space first
 
 	output(f'\n; {fn_instance.type_mappings}')
+
+	print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
 
 	curr_mod = fn.module
 	types = curr_mod.children
@@ -1673,6 +1717,7 @@ while fn_queue:
 	scope_level = 1
 
 	Shared.infile = fn.infile
+
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1736,17 +1781,15 @@ while fn_queue:
 	# Code gen
 	if fn.name == 'main':
 		output('main:')
-		output('push rbp')
-		output('mov rbp, rsp')
-		output()
 	else:
 		output(f'{fn_instance.mangle()}:')
+
+	output('push rbp')
 	output(f'mov rbp, rsp')  # 32 extra bytes are always required
 
 	# align and push only if there are function calls
 	offset = ((offset+1) | 15) + 33  # (round up to multiple of 15) + 32
 	output(f'sub rsp, {offset}')
-	output('push rbp')
 
 	for var in fn_instance.variables.values():
 		var.offset = offset - var.offset
@@ -1763,6 +1806,14 @@ while fn_queue:
 	ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
 
 	print('\n', fn.name, instance_key, sep = '')
+
+	Shared.infile.seek(fn.tell)
+	first_line = Shared.infile.readline()
+	print(f'First line: {first_line!r}')
+	second_line = Shared.infile.readline()
+	print(f'Second line: {second_line!r}')
+	print(f'Tell: {fn.tell!r}')
+	print(f'Fn: {fn!r}')
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1810,8 +1861,8 @@ while fn_queue:
 			if fn.name == 'main':
 				output('call exit')
 			else:
-				output('pop rbp')
 				output('mov rsp, rbp')
+				output('pop rbp')
 				output('ret')
 
 		elif match[1] == 'while':
@@ -1934,6 +1985,7 @@ while fn_queue:
 				dest = None
 
 
+			print('PARSING SIMPLE EXPRESSION')
 			ret_type = parse_exp(exp.strip(),
 				dest_reg = Register.a, fn_queue = fn_queue,
 				variables = fn_instance.variables)
@@ -1975,7 +2027,7 @@ while fn_queue:
 						[dest_type, ret_type], args_str,
 						variables=fn_instance.variables)
 
-					if setitem_result is not types['void']:
+					if setitem_result is not VOID_TYPE:
 						err('')
 
 				else:
@@ -1999,16 +2051,12 @@ while fn_queue:
 		output('xor rcx, rcx')
 		output('call exit')
 	else:
-		output('pop rbp')
 		output('mov rsp, rbp')
+		output('pop rbp')
 		output('ret')
 
 output(r'''
 segment .data
-_p: db `%d`, 0
-_pstr: db `%s`, 0
-_pln: db `%d\n`, 0
-_paddr: db `%p\n`, 0
 ''')
 
 for string, label in strings.items():
