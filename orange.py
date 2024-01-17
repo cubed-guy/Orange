@@ -14,9 +14,9 @@
 # DONE: nested typedef
 # DONE: module imports (modules are types)
 # DONE: arrays, dictionaries, std
+# DONE: constants
+# TODO: enums
 # TODO: SDL bindings
-# TODO: constants
-# TODO: enums?
 # TODO: check non-void return
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
 # TODO: SoA support
@@ -65,7 +65,7 @@ if   '-win' in argv: Shared.arch = Arch.win64; argv.remove('-win')
 elif '-elf' in argv: Shared.arch = Arch.elf64; argv.remove('-elf')
 elif Shared.debug: Shared.arch = Arch.win64
 else:
-	print('Format not specified. A "-win" or "-elf" flag is required.')
+	# print('Format not specified. A "-win" or "-elf" flag is required.')
 	quit(1)
 
 if len(argv) <2:
@@ -194,25 +194,25 @@ class Function_instance:
 		self.template = template
 		self.id = id
 		self.type_mappings = dict(zip(template.typeargs, typeargs))
-		self.variables = {}
+		self.arg_vars = {}
 		self.offset = 0
 
 	def init_args_vars(self, types):
 		local_types = types | self.type_mappings
 		for typename, argname in self.template.args:
-			if argname in self.variables:
+			if argname in self.arg_vars:
 				err(f'Multiple instances of argument {argname!r} for function '
 					f'{self.template.name!r}')
 
 			parse_type_result = parse_type(typename, local_types, variables={})
 			if isinstance(parse_type_result, ParseTypeError):
-				err(f'In {typename!r}, ' + parse_type_result.__str__())
+				err(f'In {typename!r}, {parse_type_result}')
 			if len(parse_type_result) != 1:
 				err('Type expression must evaluate to exactly one type')
 			T, = parse_type_result
 
 			self.offset += T.size
-			self.variables[argname] = Variable(
+			self.arg_vars[argname] = Variable(
 				argname, self.offset, T, self.template.line_no
 			)
 
@@ -226,6 +226,20 @@ class Variable:  # Instantiated when types are known
 		self.offset = offset
 		self.type = type
 		self.decl_line_no = decl_line_no
+
+	def __repr__(self):
+		return f'Variable({self.name!r})'
+
+class Const:  # Instantiated when types are known
+	def __init__(self, name, value, type, decl_line_no):
+		self.name = name
+		self.value = value
+		self.type = type
+		self.decl_line_no = decl_line_no
+		self.fields = {}
+
+	def __repr__(self):
+		return f'Const({self.name} = {self.value!r})'
 
 UNSPECIFIED_TYPE = type('UNSPECIFIED_TYPE', (), {
 	'__repr__': lambda s: f'Type<UNSPECIFIED>', 'deref': None
@@ -251,6 +265,7 @@ class Type:
 		self.methods = {}
 
 		self.fields = {}
+		self.consts = {}
 		self.instances = {}  # polymorphic instances
 
 	def __repr__(self):
@@ -274,9 +289,9 @@ class Type:
 		global core_module
 
 		# First pass, get the declarations
-		print(f'\nPASS 1 on {Shared.infile.name!r}')
 
 		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
+		print(f'Start module {Shared.infile.name!r} {out_mod.name}')
 
 		if core_module is None:
 			alloc_fn = Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0)
@@ -287,7 +302,7 @@ class Type:
 			out_mod.methods = core_module.methods.copy()
 			out_mod.children = builtin_types.copy()
 
-			print('Inherited core types:', out_mod.children)
+			# print('Inherited core types:', out_mod.children)
 
 		curr_type_dict = out_mod.children
 
@@ -305,9 +320,10 @@ class Type:
 
 			match = Patterns.split_word.match(line)
 
+
 			if not match: continue
 			elif match[1] == 'type':
-				print('[P1] New type in', curr_type)
+				# print('[P1] New type in', curr_type)
 
 				if in_function: err('Local type definitions are not yet supported')
 
@@ -325,8 +341,8 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				print('NEW TYPE', curr_type)
-				print(curr_type_dict)
+				# print('NEW TYPE', curr_type)
+				# print(curr_type_dict)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -346,7 +362,7 @@ class Type:
 				# 	err("A variable of type 'any' must be a pointer")
 
 			elif match[1] == 'import':
-				print('[P1] Import')
+				# print('[P1] Import')
 
 				if in_function: err('Local type definitions are not yet supported')
 
@@ -377,7 +393,7 @@ class Type:
 
 				Shared.infile = infile
 				curr_type_dict[name] = module
-				print('NEW MODULE', module)
+				# print('NEW MODULE', module)
 
 			elif match[1] == 'fn':  # function header
 				# print(f'[P1] New function')
@@ -410,7 +426,7 @@ class Type:
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 					ret_type, out_mod, tell, Shared.line_no, Shared.infile
 				)
-				print(f'NEW FUNCTION HEADER {fn}: {fn.args = }')
+				# print(f'NEW FUNCTION HEADER {fn}: {fn.args = }')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -449,13 +465,15 @@ class Type:
 					ret_type, out_mod, None, Shared.line_no, Shared.infile,
 					isextern = True
 				)
-				print(f'NEW EXTERN {name}: {fn.args = }')
+				# print(f'NEW EXTERN {name}: {fn.args = }')
 				curr_type.methods[name] = fn
 
 				output('extern', name)
 
-			elif type_stack and not in_function:
+			elif not in_function:
 				if match[1] == 'let':
+					if not type_stack: err('Global variables are not yet supported')
+
 					# print(f'[P1] New field in {curr_type!r}')
 					match = Patterns.split_word.match(match[2])
 					name = match[1]
@@ -473,29 +491,47 @@ class Type:
 
 					if not isinstance(parse_type_result, ParseTypeError):
 						T, = parse_type_result
-						print('GOT REAL TYPE')
-					else:
-						print('GOT FAKE TYPE')
+						# print('GOT REAL TYPE')
+					# else:
+						# print('GOT FAKE TYPE')
 
 					curr_type.fields[name] = (
 						Variable(name, curr_type.size, T, Shared.line_no)
 					)
-					print(f'  Created a field {name!r} of {T}')
+					# print(f'  Created a field {name!r} of {T}')
 					if curr_type.size is not None:
 						if isinstance(T, Type):
-							print('curr_type.size:', f'Adding {T.size} to size')
+							# print('curr_type.size:', f'Adding {T.size} to size')
 							curr_type.size += T.size
 						else:
-							print('curr_type.size:', f'Setting size to None')
+							# print('curr_type.size:', f'Setting size to None')
 							curr_type.size = None
-					else:
-						print('curr_type.size:', 'Size is already None')
+					# else:
+						# print('curr_type.size:', 'Size is already None')
+
+				elif match[1] == 'const':
+					print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
+					split = match[2].split(maxsplit=1)
+					if len(split) != 2:
+						err('An expression is required to declare a constant')
+
+					name, exp = split
+
+					if name in curr_type.consts:
+						err(f'{name!r} is already a declared constant')
+
+					print(f'Declared a constant {name!r} associated to {curr_type}')
+					const_var = eval_const(exp, curr_type_dict,
+						variables=curr_type.consts)
+					# const_var.name = name
+					curr_type.consts[name] = const_var
+					print(f'Constants in {curr_type}: {curr_type.consts}')
 
 				elif match[1] == 'end':
-					print(f'[P1] End of {curr_type!r}, size = {curr_type.size}')
-					for name, field in curr_type.fields.items():
-						print('   ', name, field.type)
-					print()
+					# print(f'[P1] End of {curr_type!r}, size = {curr_type.size}')
+					# for name, field in curr_type.fields.items():
+						# print('   ', name, field.type)
+					# print()
 					type_stack.pop()  # no need to check emptiness.
 
 					if type_stack: curr_type = type_stack[-1]
@@ -506,7 +542,7 @@ class Type:
 			# else: not (type_stack and not in_function) == not type_stack or in_function
 
 			elif match[1] in ('if', 'while'):
-				print(f'[P1] Enter construct')
+				# print(f'[P1] Enter construct')
 
 				scope_level += 1
 
@@ -522,7 +558,7 @@ class Type:
 				# else:
 				# 	print(f'[P1] Exit construct')
 
-		print('Module functions:', *out_mod.methods)
+		print('End module', out_mod.name)
 
 		return out_mod
 
@@ -530,8 +566,8 @@ class Type:
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		global types
 
-		if self is PTR_TYPE:
-			print('GETTING PTR INSTANCE:', args)
+		# if self is PTR_TYPE:
+			# print('GETTING PTR INSTANCE:', args)
 
 		if self.parent is not self:
 			if args:
@@ -542,7 +578,7 @@ class Type:
 			err(f'{self} expects {len(self.args)} polymorphic arguments. '
 				f'Got {len(args)}: {args}.')
 
-		print('INSTANTIATE TYPE', self)
+		# print('INSTANTIATE TYPE', self)
 
 		if args in self.instances:
 			return self.instances[args]
@@ -552,7 +588,7 @@ class Type:
 
 			self.instances[args] = self
 			if not self.fields:
-				print('Instantiated a type that has no fields, size =', self.size, [self])
+				# print('Instantiated a type that has no fields, size =', self.size, [self])
 				return self  # for fn_wrapper types?
 			instance = self
 			instance.size = 0
@@ -567,7 +603,7 @@ class Type:
 			instance.methods = self.methods
 			self.instances[args] = instance
 
-		print('GET INSTANCE FIELDS OF', self, self.fields)
+		# print('GET INSTANCE FIELDS OF', self, self.fields)
 
 		for name, field in self.fields.items():
 			T = field.type
@@ -591,7 +627,7 @@ class Type:
 	def match_pattern(self, type_str, types) -> dict['type_arg': 'Type']:
 		type_queue = [self]
 		out_mappings = {}
-		print('Matching Pattern', self, type_str)
+		# print('Matching Pattern', self, type_str)
 
 		for token in type_str.split():
 			if not type_queue:
@@ -604,12 +640,12 @@ class Type:
 			if token.startswith('&'):
 				if expected_type.deref is None:
 					err(f'{expected_type!r} does not have deref for {token!r}')
-				print(f'deref: {token!r} -> {token[1:]!r}; {expected_type} -> {expected_type.deref}')
+				# print(f'deref: {token!r} -> {token[1:]!r}; {expected_type} -> {expected_type.deref}')
 				expected_type = expected_type.deref
 				token = token[1:]
 			elif expected_type.deref is not None:
 				if token in types:
-					print(f'  {types[token] = }, {expected_type = }')
+					# print(f'  {types[token] = }, {expected_type = }')
 					if types[token].deref == expected_type.deref:
 						expected_type = types[token]
 
@@ -625,13 +661,13 @@ class Type:
 					err('Cannot use children of a polymorphic type')
 
 				if token not in out_mappings:
-					print(f'MATCH {token!r} to {expected_type}')
+					# print(f'MATCH {token!r} to {expected_type}')
 					out_mappings[token] = expected_type
 				elif out_mappings[token] is UNSPECIFIED_TYPE:
-					print(f'MATCH {token!r} to {expected_type}')
+					# print(f'MATCH {token!r} to {expected_type}')
 					out_mappings[token] = expected_type
 				elif expected_type is ANY_TYPE:
-					print(f'MATCH {token!r} to {expected_type}')
+					# print(f'MATCH {token!r} to {expected_type}')
 					out_mappings[token] = expected_type
 
 				elif out_mappings[token] is not expected_type:
@@ -640,7 +676,7 @@ class Type:
 						f'{expected_type} and {out_mappings[token]}')
 			else:
 				# token is a concrete type
-				print(f'MATCH {token!r} to {expected_type}')
+				# print(f'MATCH {token!r} to {expected_type}')
 				evaluated_type = types[token]
 				for child in children:
 					if child not in evaluated_type.children:
@@ -665,9 +701,9 @@ class Type:
 		self.ref.deref = self
 		self.ref.size = PTR_TYPE.size
 
-		print('POINTER created:', self.ref)
-		print('POINTER size:   ', self.ref.size)
-		print('POINTER methods:', self.ref.methods)
+		# print('POINTER created:', self.ref)
+		# print('POINTER size:   ', self.ref.size)
+		# print('POINTER methods:', self.ref.methods)
 
 		# print(self.ref, 'has a deref of', self)
 		return self.ref
@@ -790,7 +826,7 @@ def size_prefix(size):
 def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeError]:
 	# DONE: add pointer support
 
-	print(f'IN PARSETYPE: {type_str = }')
+	# print(f'IN PARSETYPE: {type_str = }')
 	if type_str.startswith('&'):
 		type_str = type_str[1:].strip()
 		pointer = True
@@ -810,7 +846,7 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	field, *children = rhs.split('.')
 
 	if token:
-		print(f'Type meta:  {token = }, {field = }')
+		# print(f'Type meta:  {token = }, {field = }')
 
 
 		if field == 'type':
@@ -826,13 +862,13 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	else:
 		T = field
 		if T not in types:
-			print(repr(T), 'not in', types)
+			# print(repr(T), 'not in', types)
 			return ParseTypeError(f'Type {T!r} is not defined')
 		else:
 			T = types[T]
 
 	for child in children:
-		print(f'Getting child {T!r}.{child}')
+		# print(f'Getting child {T!r}.{child}')
 		if child not in T.children:
 			err(f'Type {child!r} is not defined in {T!r}')
 
@@ -843,7 +879,7 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	if len(type_tokens) > 1:
 		args = parse_type(type_tokens[1], types, variables=variables)
 		if isinstance(args, ParseTypeError): return args
-		print(f'PARSETYPE RECURSION with {type_tokens[1]!r} yielded {args}')
+		# print(f'PARSETYPE RECURSION with {type_tokens[1]!r} yielded {args}')
 	else:
 		args = []
 
@@ -930,7 +966,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	-> (list[str], Union[str, int], Type):
 	# (instructions to get the value of token, expression, type)
 
-	print('Parse token', repr(token))
+	# print('Parse token', repr(token))
 
 	clause = None
 	val = None
@@ -939,13 +975,13 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	insts = []
 	r_operand = None
 
-	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>+-*/%&^|'):  # big ones first
+	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>|^&+-*/%'):  # big ones first
 		operator_idx = Patterns.find_through_strings(token, operator)
 		if operator_idx != -1:
 			l_operand = token[:operator_idx].strip()
 			r_operand = token[operator_idx+len(operator):].strip()
 
-			print(f'{l_operand!r} {operator} {r_operand!r}')
+			# print(f'{l_operand!r} {operator} {r_operand!r}')
 			if not l_operand:
 				# err('[Internal error] Unary not checked earlier')
 				r_operand = None
@@ -973,12 +1009,28 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		exp = token[:colon_idx]
 		field = token[colon_idx+1:].strip()
 
-		print(f'Token meta: {exp = }, {field = }')
+		# TODO: T, val = parse_meta(exp, field)
 
-		if field == 'size':
-			parse_type_result = parse_type(exp, types, variables=fn_instance.variables)
+		# print(f'Token meta: {exp = }, {field = }')
+
+		if exp.endswith(':'):  # const
+			parse_type_result = parse_type(exp[:-1], types, variables=variables)
 			if isinstance(parse_type_result, ParseTypeError):
-				err(f'In {exp!r}, ' + parse_type_result.__str__())
+				err(f'In {exp!r}, {parse_type_result}')
+			T, = parse_type_result
+
+			if field not in T.consts:
+				err(f'{field!r} was not found in {T}')
+
+			val = T.consts[field]
+
+			T = val.type
+			val = val.value
+
+		elif field == 'size':
+			parse_type_result = parse_type(exp, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, {parse_type_result}')
 			if addr is Address_modes.ADDRESS:
 				val = PTR_SIZE
 			else:
@@ -986,11 +1038,18 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 					err(f'{exp!r} does not correspond to a single type')
 				T, = parse_type_result
 				val = T.size
-			print(f'{T}:size = {val}')
+			# print(f'{T}:size = {val}')
 			T = UNSPECIFIED_TYPE
 		elif field == 'type':
 			_insts, _clause, exp_type = parse_token(exp, types,
-				variables=fn_instance.variables, virtual=True)
+				variables=variables, virtual=True)
+
+			if addr is Address_modes.DEREF:
+				addr = Address_modes.NONE
+
+				if exp_type.deref is None:
+					err(f'{exp_type} cannot be dereferenced')
+				exp_type = exp_type.deref
 
 			string = bytes(exp_type.name, 'utf-8')
 			if virtual:
@@ -1000,9 +1059,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			T = STR_TYPE
 
 		elif field == 'name':
-			parse_type_result = parse_type(exp, types, variables=fn_instance.variables)
+			parse_type_result = parse_type(exp, types, variables=variables)
 			if isinstance(parse_type_result, ParseTypeError):
-				err(f'In {exp!r}, ' + parse_type_result.__str__())
+				err(f'In {exp!r}, {parse_type_result}')
 			if len(parse_type_result) != 1:
 				# NOTE: I would 
 				err(f'{exp!r} does not correspond to a single type')
@@ -1015,21 +1074,36 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		else:  # TODO: var:len
 			err(f'Unsupported metadata field {field!r} for token')
 
+		if addr is Address_modes.ADDRESS:
+			err('Taking address of a meta field; not allowed')
+		elif addr is Address_modes.DEREF:
+			err('Dereferencing a meta field; not allowed')
+
 	elif token.isidentifier():
 		# if addr: err("Can't take addresses of local variables yet")
+		# print(f'{variables = }')
 		if token not in variables: err(f'{token!r} not defined')
 		var = variables[token]
-		offset = var.offset
-		clause = f'rsp + {offset}'
-		T = var.type
-		if addr is Address_modes.ADDRESS:
-			T = T.pointer()
-			insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{clause}]')
-			clause = None
-		elif virtual:
-			clause = None
+
+		if isinstance(var, Const):
+			if addr is Address_modes.ADDRESS:
+				err('Cannot take a reference to a constant')
+
+			T = var.type
+			val = var.value
+			
 		else:
-			clause = f'{size_prefix(var.type.size)} [{clause}]'
+			offset = var.offset
+			clause = f'rsp + {offset}'
+			T = var.type
+			if addr is Address_modes.ADDRESS:
+				T = T.pointer()
+				insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{clause}]')
+				clause = None
+			elif virtual:
+				clause = None
+			else:
+				clause = f'{size_prefix(var.type.size)} [{clause}]'
 
 	elif dot_idx != -1:
 		root = token[:dot_idx]
@@ -1038,16 +1112,16 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if root not in variables:
 			err(f'{root!r} not defined')
 
-		print(f'Getting a field of {root!r}')
+		# print(f'Getting a field of {root!r}')
 		var = variables[root]
 		offset = var.offset
 		base_reg = 'rsp'
 
 		T = var.type
-		print(f'Getting a field of {root!r} {T}')
+		# print(f'Getting a field of {root!r} {T}')
 		for field in chain:
 			field = field.strip()
-			print(f'  {field = }')
+			# print(f'  {field = }')
 			if T is not STR_TYPE and T.deref is not None:
 				# We want to dereference T, so we first put it into a register
 				size = Type.get_size(T)
@@ -1062,11 +1136,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if field not in T.fields: err(f'{T} has no field {field!r}')
 
 			var = T.fields[field]
-			for _name, _field in T.fields.items():
-				print(' ', _name, _field.type)
-			print(f'  {T}.fields[{field!r}]')
+			# for _name, _field in T.fields.items():
+				# print(' ', _name, _field.type)
+			# print(f'  {T}.fields[{field!r}]')
 			T = var.type
-			print(f'  {field = } {T}')
+			# print(f'  {field = } {T}')
 			offset += var.offset
 
 		clause = f'{base_reg} + {offset}'
@@ -1114,7 +1188,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				err('Invalid syntax for character literal')
 			val = int(token[3:5], 16)
 		clause = f'{val!r}'
-		T = types['char']
+		T = CHAR_TYPE
 
 	elif token.startswith('"'):
 		if addr is Address_modes.ADDRESS: err('Cannot take address of string literal')
@@ -1152,15 +1226,204 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			*get_operator_insts(operator, o_clause, o_type)
 		]
 		clause = None
-		print(f'OPERATOR {operator!r} using {T} and {o_type} ({addr = }) gives... ', end='')
+		# print(f'OPERATOR {operator!r} using {T} and {o_type} ({addr = }) gives... ', end='')
 		T = operator_result_type(operator, T, o_type)
-		print(T)
+		# print(T)
 	return insts, clause, T
+
+def eval_const(exp, types, *, variables) -> Const:
+	# (instructions to get the value of token, expression, type)
+
+	# print('Eval expression', repr(token))
+
+	clause = None
+	val = None
+	var = None
+	T   = UNSPECIFIED_TYPE
+	r_operand = None
+
+	# don't support enum{} yet
+
+	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>|^&+-*/%'):  # big ones first
+		operator_idx = Patterns.find_through_strings(exp, operator)
+		if operator_idx != -1:
+			l_operand = exp[:operator_idx].strip()
+			r_operand = exp[operator_idx+len(operator):].strip()
+
+			# print(f'  {l_operand!r} {operator} {r_operand!r}')
+			if not l_operand:
+				# err('[Internal error] Unary not checked earlier')
+				r_operand = None
+				continue
+
+			o_val = eval_const(r_operand, types,
+				variables=variables)
+			exp = l_operand
+			break
+
+	if exp.startswith('&'):
+		addr = Address_modes.ADDRESS
+		exp = exp[1:].lstrip()
+	elif exp.startswith('*'):
+		err("Can't save a dereferenced value as a constance")
+	else:
+		addr = Address_modes.NONE
+
+	colon_idx = Patterns.rfind_through_strings(exp, ':')
+	dot_idx = Patterns.find_through_strings(exp, '.')
+
+	if colon_idx != -1:
+		exp = exp[:colon_idx]
+		field = exp[colon_idx+1:].strip()
+
+		# TODO: T, val = parse_meta(exp, field)
+
+		# print(f'Token meta: {exp = }, {field = }')
+
+		if exp.endswith(':'):  # const defined in terms of a const
+			parse_type_result = parse_type(exp[:-1], types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, {parse_type_result}')
+			T, = parse_type_result
+
+			if field not in T.consts:
+				err(f'{field!r} was not found in {T}')
+
+			val = T.consts[field]
+
+			T = val.type
+			val = val.value
+
+		elif field == 'size':
+			parse_type_result = parse_type(exp, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, {parse_type_result}')
+			if addr is Address_modes.ADDRESS:
+				val = PTR_SIZE
+			else:
+				if len(parse_type_result) != 1:
+					err(f'{exp!r} does not correspond to a single type')
+				T, = parse_type_result
+				val = T.size
+			# print(f'{T}:size = {val}')
+			T = UNSPECIFIED_TYPE
+		elif field == 'type':
+			_insts, _clause, exp_type = parse_token(exp, types,
+				variables=variables, virtual=True)
+
+			if addr is Address_modes.DEREF:
+				addr = Address_modes.NONE
+
+				if exp_type.deref is None:
+					err(f'{exp_type} cannot be dereferenced')
+				exp_type = exp_type.deref
+
+			string = bytes(exp_type.name, 'utf-8')
+			if virtual:
+				val = None
+			else:
+				val = get_string_label(string, strings)
+			T = STR_TYPE
+
+		elif field == 'name':
+			parse_type_result = parse_type(exp, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, {parse_type_result}')
+			if len(parse_type_result) != 1:
+				# NOTE: I would 
+				err(f'{exp!r} does not correspond to a single type')
+			T, = parse_type_result
+
+			string = bytes(T.name, 'utf-8')
+			clause = get_string_label(string, strings)
+			T = STR_TYPE
+
+		else:  # TODO: var:len
+			err(f'Unsupported metadata field {field!r} for token')
+
+	elif exp.isidentifier():
+		# if addr: err("Can't take addresses of local variables yet")
+		if exp not in variables: err(f'{exp!r} not defined')
+		var = variables[exp]
+
+		if addr is Address_modes.ADDRESS:
+			err('Reference constants are not yet supported')
+		elif isinstance(var, Const):
+			T = var.type
+			val = var.value
+		else:
+			err('Cannot define a constant using a variable')
+
+	elif dot_idx != -1:
+		err('Constant fields are not yet supported')
+
+	elif exp.isdigit():
+		if addr is Address_modes.ADDRESS:
+			err("Can't take address of a integer literal")
+		if addr is Address_modes.DEREF:
+			err("Can't dereference a integer literal")
+		val = int(exp)
+
+	elif exp.startswith("'"):
+		if addr is Address_modes.ADDRESS:
+			err("Can't take address of a character literal")
+		if addr is Address_modes.DEREF:
+			err("Can't dereference a character literal")
+		if exp[-1] != "'":
+			err('Expected end quote (\') at the end of character literal.')
+
+		if exp[1] != '\\':
+			if len(exp) != 3:
+				err('Invalid syntax for character literal')
+			val = ord(exp[1])
+		elif exp[2] != 'x':
+			if len(exp) > 4: err('Character literal too long')
+			if len(exp) < 4: err('Character literal too short')
+			c = exp[2]
+			if   c == '0':  val = 0
+			elif c == 't':  val = 9
+			elif c == 'n':  val = 10
+			elif c == 'e':  val = 27
+			elif c == '"':  val = 34
+			elif c == "'":  val = 39
+			elif c == '\\': val = 92
+			else:
+				err('Invalid escape sequence')
+		else:
+			if len(exp) != 6:
+				err('Invalid syntax for character literal')
+			val = int(exp[3:5], 16)
+		T = CHAR_TYPE
+
+	elif exp.startswith('"'):
+		if addr is Address_modes.ADDRESS: err('Cannot take address of string literal')
+
+		string = parse_string(exp)
+		val = get_string_label(string, strings)
+		T = STR_TYPE
+
+	else:
+		err(f'Invalid token syntax {exp!r}')
+
+	if val is None:
+		err('[Internal Error] Got no val while evaluating a constant')
+
+	if addr is Address_modes.DEREF:
+		err('Dereferencing does not yield a constant')
+
+	l_operand = Const('_l', val, T, Shared.line_no)
+
+	if r_operand is not None:
+		T, val = eval_operator_const(l_operand, operator, r_operand)
+		return Const('_val', val, T, Shared.line_no)
+
+	return l_operand
+
 
 # muddles rbx if dest_reg is Flag
 def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 	# extract call_function(fn, args)
-	print(f'PARSE EXP: {exp!r}')
+	# print(f'PARSE EXP: {exp!r}')
 
 	global types, fn_types
 
@@ -1181,7 +1444,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 		# print('Token', repr(exp), 'has a type of', T)
 
 		if isinstance(T, Flag):
-			print('Parsed flag token', exp, '->', T)
+			# print('Parsed flag token', exp, '->', T)
 			for inst in insts:
 				output(inst.format(dest_reg=Register.b))
 				# err('[Internal error] Multiple instructions from a flag token')
@@ -1235,7 +1498,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 					.format(Register.a))
 				return Flag.nz
 
-	print('Parse exp', repr(exp))
+	# print('Parse exp', repr(exp))
 
 	if exp_type is Exp_type.CALL and exp[-1] != ')':
 		err("Expected function call to end with a closing parenthesis ')'")
@@ -1253,7 +1516,7 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 			fn_name = '_getitem'
 
 		insts, clause, T = parse_token(exp[:idx].strip(), fn_types, variables=variables)
-		print(f'Type of {exp[:idx]!r} is {T}')
+		# print(f'Type of {exp[:idx]!r} is {T}')
 
 		# TODO: What if I want an integer of a different type?
 
@@ -1276,15 +1539,15 @@ def parse_exp(exp: 'stripped', *, dest_reg, fn_queue, variables) -> Type:
 
 	ret_type = call_function(fn_name, arg_types, exp[idx:], variables=variables)
 
-	print(f'{dest_reg = }')
+	# print(f'{dest_reg = }')
 	if dest_reg is Flag:
 		# output is in rax
-		print('Classified as a flag')
+		# print('Classified as a flag')
 		output(f'test {Register.a:{ret_type.size}}, '
 			f'{Register.a:{ret_type.size}}')
 		return Flag.nz
 
-	print('Not classified as a flag')
+	# print('Not classified as a flag')
 
 	return ret_type
 
@@ -1317,7 +1580,7 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 
 
 				if isinstance(parse_type_result, ParseTypeError):
-					err(f'In {arg!r}, ' + parse_type_result.__str__())
+					err(f'In {arg!r}, {parse_type_result}')
 				if len(parse_type_result) != 1:
 					err('Expected exactly one type in alloc()')
 
@@ -1329,10 +1592,10 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 
 			arg = f'{alloc_fac}*{arg}'
 
-		print('Arg:', arg)
+		# print('Arg:', arg)
 
 		insts, clause, T = parse_token(arg, fn_types, variables=variables)
-		print(f'Type of {arg!r} is {T}')
+		# print(f'Type of {arg!r} is {T}')
 
 		# TODO: What if I want an integer of a different type?
 
@@ -1353,18 +1616,18 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 	if dot:
 		parse_type_result = parse_type(caller_type_name, fn_types, variables=variables)
 		if isinstance(parse_type_result, ParseTypeError):
-			err(f'In {caller_type_name!r}, ' + parse_type_result.__str__())
+			err(f'In {caller_type_name!r}, {parse_type_result}')
 		if len(parse_type_result) != 1:
 			err('Method calls expect exactly one type')
 		caller_type, = parse_type_result
 		# if caller_type.deref is not None:
 		# 	caller_type = caller_type.deref
 
-		print('PARSED TYPE FOR METHOD:', caller_type)
+		# print('PARSED TYPE FOR METHOD:', caller_type)
 
 		# NOTE: Temp
 		if fn_name not in caller_type.methods:
-			print(f'TYPE {caller_type} HAS NO SUCH METHOD {fn_name!r}')
+			# print(f'TYPE {caller_type} HAS NO SUCH METHOD {fn_name!r}')
 			# check for deref only if method doesn't exist
 			if caller_type.deref is not None:
 				caller_type = caller_type.deref
@@ -1373,12 +1636,12 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 			else:
 				err(f'{caller_type} has no method named {fn_name!r}')
 		fn_header = caller_type.methods[fn_name]
-		print('METHOD  ', fn_name, fn_header)
+		# print('METHOD  ', fn_name, fn_header)
 	elif fn_name not in curr_mod.methods:
 		err(f'No function named {fn_name!r}')
 	else:
 		fn_header = curr_mod.methods[fn_name]
-		print('FUNCTION', fn_name, fn_header)
+		# print('FUNCTION', fn_name, fn_header)
 		caller_type = None
 
 	# use fn_header.typeargs, fn_header.args
@@ -1398,7 +1661,7 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		type_mappings |= dict(
 			zip(caller_type.parent.args, caller_type.args)
 		)
-	print('TYPE MAPPING USING', fn_header.args, 'AND', arg_types)
+	# print('TYPE MAPPING USING', fn_header.args, 'AND', arg_types)
 	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
 
 		if arg_type is not UNSPECIFIED_TYPE:
@@ -1406,19 +1669,19 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		else:
 			parse_type_result = parse_type(type_str, types, variables=variables)
 			if isinstance(parse_type_result, ParseTypeError):
-				print('NOT MAPPED, UNSPECIFIED')
+				# print('NOT MAPPED, UNSPECIFIED')
 
 				# don't update mappings
 				if len(type_str.split(maxsplit=1)) > 1: continue
 				# We have to expect UNSPECIFIED_TYPE in the for loop
 				curr_mappings = {type_str.lstrip(): UNSPECIFIED_TYPE}
 			else:
-				print('MAPPED, UNSPECIFIED')
+				# print('MAPPED, UNSPECIFIED')
 				continue  # parse_type is not None, so it won't change
 
 		for type_arg, matched_type in curr_mappings.items():
 			if type_arg not in type_mappings:
-				print(f'{type_mappings = }')
+				# print(f'{type_mappings = }')
 				err(f'{type_arg!r} in {type_str} is neither '
 					'an existing type nor a type argument')
 			elif type_mappings[type_arg] in (UNSPECIFIED_TYPE, None):
@@ -1445,10 +1708,10 @@ def call_function(fn_name, arg_types, args_str, *, variables):
 		err('[Internal Error] All types mapped but still got a TypeError')
 
 	if instance_key in fn_header.instances:
-		print('Queued and done', (fn_header, instance_key))
+		# print('Queued and done', (fn_header, instance_key))
 		fn_instance = fn_header.instances[instance_key]
 	else:
-		print('Adding to queue', (fn_header, instance_key))
+		# print('Adding to queue', (fn_header, instance_key))
 		fn_queue.append((fn_header, instance_key))
 		fn_instance = fn_header.add_sub(
 			instance_key, (*type_mappings.values(),)
@@ -1646,24 +1909,24 @@ ANY_TYPE = builtin_types['any']
 
 U64_TYPE = builtin_types['u64']
 U64_TYPE.size = 8
-print('FORCE SET SIZE = 0 [U64]')
+# print('FORCE SET SIZE = 0 [U64]')
 
 VOID_TYPE = builtin_types['void']
 VOID_TYPE.size = 0
-print('FORCE SET SIZE = 0 [VOID]')
+# print('FORCE SET SIZE = 0 [VOID]')
 
 CHAR_TYPE = builtin_types['char']
 CHAR_TYPE.size = 1
-print('FORCE SET SIZE = 1 [CHAR]')
+# print('FORCE SET SIZE = 1 [CHAR]')
 
 INT_TYPE = builtin_types['int']
 INT_TYPE.size = 4
-print('FORCE SET SIZE = 4 [INT]')
+# print('FORCE SET SIZE = 4 [INT]')
 
 STR_TYPE = builtin_types['str']
 STR_TYPE.deref = CHAR_TYPE
 
-print('STR_TYPE size =', STR_TYPE.size)
+# print('STR_TYPE size =', STR_TYPE.size)
 
 builtin_type_set = {*builtin_types.values(), UNSPECIFIED_TYPE, FLAG_TYPE}
 
@@ -1691,11 +1954,13 @@ while fn_queue:
 	fn, instance_key = fn_queue.pop(0)
 	fn_instance = fn.instances[instance_key]
 
+	# print('\n', fn.name, instance_key, sep = '')
+
 	if fn_instance.template.isextern:
-		print(f'DEQUEUED EXTERN {fn}, {instance_key}')
+		# print(f'DEQUEUED EXTERN {fn}, {instance_key}')
 		continue
-	else:
-		print('DEQUEUED Function', fn)
+	# else:
+		# print('DEQUEUED Function', fn)
 
 	# fn_instance = fn.add_sub(instance_key)
 	# if fn_instance is None: continue
@@ -1704,7 +1969,7 @@ while fn_queue:
 
 	output(f'\n; {fn_instance.type_mappings}')
 
-	print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
+	# print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
 
 	curr_mod = fn.module
 	types = curr_mod.children
@@ -1714,10 +1979,17 @@ while fn_queue:
 	fn_instance.init_args_vars(types)
 	offset = fn_instance.offset
 
+	variables = curr_mod.consts | fn_instance.arg_vars
+	local_variables = {*fn_instance.arg_vars}
+
+	print('Function:', fn.name, fn_instance.type_mappings)
+	print('Module:', curr_mod)
+	print('Variables:', variables)
+	print('Constants:', curr_mod.consts)
+
 	scope_level = 1
 
 	Shared.infile = fn.infile
-
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1732,19 +2004,19 @@ while fn_queue:
 		match = Patterns.split_word.match(line)
 		if match[1] == 'let':
 			name, type_str = match[2].split(maxsplit=1)
-			print('DECALRATION:', (name, type_str))
+			# print('DECALRATION:', (name, type_str))
 
-			if name in fn_instance.variables:
-				var = fn_instance.variables[name]
+			if name in local_variables:
+				var = variables[name]
 				err(f'Variable {name!r} already declared in '
 					f'line {var.decl_line_no}')
 
-			print(f'{type_str = }')
+			# print(f'{type_str = }')
 			parse_type_result = parse_type(type_str.lstrip(), fn_types,
-				variables=fn_instance.variables)
-			print('EXIT PARSETYPE')
+				variables=variables)
+			# print('EXIT PARSETYPE')
 			if isinstance(parse_type_result, ParseTypeError):
-				err(f'[in {type_str.lstrip()!r}] ' + parse_type_result.__str__())
+				err(f'[in {type_str.lstrip()!r}] {parse_type_result}')
 				# one of the arguments in T is polymorphic
 				# DRY this up maybe
 				# match = Patterns.split_word.match(type_str)
@@ -1756,16 +2028,34 @@ while fn_queue:
 				# 	T = fn_types[match[1]]
 				# T.get_instance(tuple(parse_type(match[2])))
 
-			print(f'Declaration type list of {type_str!r}: {parse_type_result}')
+			# print(f'Declaration type list of {type_str!r}: {parse_type_result}')
 			T, = parse_type_result
 
 			if T is ANY_TYPE:
 				err("A variable of type 'any' must be a pointer")
 
 			offset += T.size
-			fn_instance.variables[name] = (
+			local_variables.add(name)
+			variables[name] = (
 				Variable(name, offset, T, Shared.line_no)
 			)
+
+		elif match[1] == 'const':
+			split = match[2].split(maxsplit=1)
+			if len(split) != 2:
+				err('An expression is required to declare a constant')
+
+			name, exp = split
+
+			if name in local_variables:
+				err(f'{name!r} is already declared')
+
+			local_variables.add(name)
+			const_var = eval_const(exp, fn_types,
+				variables=variables)
+			# const_var.name = name
+			variables[name] = const_var
+
 
 		elif match[1] in ('if', 'while'):
 			scope_level += 1
@@ -1791,29 +2081,24 @@ while fn_queue:
 	offset = ((offset+1) | 15) + 33  # (round up to multiple of 15) + 32
 	output(f'sub rsp, {offset}')
 
-	for var in fn_instance.variables.values():
+	for var in variables.values():
+		if isinstance(var, Const): continue
 		var.offset = offset - var.offset
 
 	# Populate arguments
 	if len(fn.args) > len(arg_regs):
 		err('[Internal Error] Too many arguments; this was not checked earlier')
 	for (_, argname), arg_reg in zip(fn.args, arg_regs):
-		arg = fn_instance.variables[argname]
+		arg = variables[argname]
 		reg_str = arg_reg.encode(size=arg.type.size)
 		output(f'mov {size_prefix(arg.type.size)} [rsp + {arg.offset}], ',
 			reg_str)
 
 	ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
 
-	print('\n', fn.name, instance_key, sep = '')
-
 	Shared.infile.seek(fn.tell)
 	first_line = Shared.infile.readline()
-	print(f'First line: {first_line!r}')
 	second_line = Shared.infile.readline()
-	print(f'Second line: {second_line!r}')
-	print(f'Tell: {fn.tell!r}')
-	print(f'Fn: {fn!r}')
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
@@ -1823,13 +2108,14 @@ while fn_queue:
 		if not line: continue
 
 		output(f'; ({Shared.line_no}) {Shared.line.strip()}')
-		print(f'{Shared.line_no} {Shared.line.strip()!r}')
+		# print(f'{Shared.line_no} {Shared.line.strip()!r}')
 
 		match = Patterns.split_word.match(line)
 
 		if not match: match = Subscriptable(); print(match)
 
 		if   match[1] == 'let': continue
+		elif match[1] == 'const': continue
 		elif match[1] == 'return':
 			if fn.name == 'main': dest_reg = Register.c
 			else: dest_reg = Register.a
@@ -1841,10 +2127,10 @@ while fn_queue:
 				# for the case of returning UNSPECIFIED_TYPE
 				ret_type = parse_exp(match[2].strip(),
 					dest_reg = dest_reg, fn_queue = fn_queue,
-					variables = fn_instance.variables)
+					variables = variables)
 
 			fn_type_list = parse_type(fn.ret_type, fn_types,
-				variables=fn_instance.variables)
+				variables=variables)
 
 			if fn_type_list is None:
 				# TODO: better message
@@ -1873,7 +2159,7 @@ while fn_queue:
 			# TODO: parse_exp() returns a Flag object if dest_reg is flags
 			ret_flag = parse_exp(match[2].strip(),
 				dest_reg = Flag, fn_queue = fn_queue,
-				variables = fn_instance.variables
+				variables = variables
 			)
 
 			if ret_flag is Flag.ALWAYS:
@@ -1890,7 +2176,7 @@ while fn_queue:
 			# TODO: parse_exp() returns a Flag object if dest_reg is flags
 			ret_flag = parse_exp(match[2].strip(),
 				dest_reg = Flag, fn_queue = fn_queue,
-				variables = fn_instance.variables
+				variables = variables
 			)
 
 			if ret_flag is Flag.ALWAYS:
@@ -1915,7 +2201,7 @@ while fn_queue:
 			# TODO: parse_exp() returns a Flag object if dest_reg is flags
 			ret_flag = parse_exp(match[2].strip(),
 				dest_reg = Flag, fn_queue = fn_queue,
-				variables = fn_instance.variables
+				variables = variables
 			)
 
 			if ret_flag is Flag.ALWAYS:
@@ -1979,16 +2265,14 @@ while fn_queue:
 			if match:
 				exp = match['post'].strip()
 				dest = match['pre'].strip()
-				print(f'{exp = }; {dest = }; {match[2] = }')
+				# print(f'{exp = }; {dest = }; {match[2] = }')
 			else:
 				exp = line
 				dest = None
 
-
-			print('PARSING SIMPLE EXPRESSION')
 			ret_type = parse_exp(exp.strip(),
 				dest_reg = Register.a, fn_queue = fn_queue,
-				variables = fn_instance.variables)
+				variables = variables)
 
 			if dest is not None:
 				index = Patterns.find_through_strings(dest, '[')
@@ -2000,7 +2284,7 @@ while fn_queue:
 					dest_token = dest
 
 				insts, dest_clause, dest_type = parse_token(dest_token, fn_types,
-					variables = fn_instance.variables)
+					variables = variables)
 
 				if not dest_clause: err('Destination too complex')
 
@@ -2015,7 +2299,7 @@ while fn_queue:
 					for inst in insts:
 						output(inst.format(dest_reg=first_arg))
 
-					print(f'{dest_clause = }')
+					# print(f'{dest_clause = }')
 					dest_clause = dest_clause.format(dest_reg=first_arg)
 					output(f'mov {first_arg:{dest_type.size}}, {dest_clause}')
 					# print(f'Moving into {dest_clause!r}')
@@ -2025,7 +2309,7 @@ while fn_queue:
 
 					setitem_result = call_function(f'{dest_type.name}._setitem',
 						[dest_type, ret_type], args_str,
-						variables=fn_instance.variables)
+						variables=variables)
 
 					if setitem_result is not VOID_TYPE:
 						err('')
@@ -2054,6 +2338,8 @@ while fn_queue:
 		output('mov rsp, rbp')
 		output('pop rbp')
 		output('ret')
+
+	print()
 
 output(r'''
 segment .data

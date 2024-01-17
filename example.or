@@ -697,6 +697,42 @@ end
 
 extern exit: int code
 
+const x 55
+const y 56
+
+fn constants
+	const1(43)
+	const2(43)
+	const3()
+end
+
+fn const1: int x
+	let b int
+	b = 12
+
+	println(b)
+	println(x)
+	println(y)
+end
+
+fn const2: int b
+	const y 109
+
+	println(b)
+	println(x)
+	println(y)
+end
+
+type const_mod
+	const x 55
+	const y 909
+end
+
+fn const3
+	println(const_mod::x)
+	println(const_mod::y)
+end
+
 fn main
 	// basics()
 	// operations()
@@ -707,7 +743,7 @@ fn main
 	// polymorphic_structs()
 	// classmethods()
 	// array_index()
-	dictionaries()
+	// dictionaries()
 	// streq_tests()
 	// mul_tests()
 	// more_meta()
@@ -715,8 +751,8 @@ fn main
 	// passing_args()
 	// nested_types()
 	// imports()
-	// generic_prints()
-	str.printf("%s\n", "Exitting...")
+	generic_prints()
+	constants()
 
 	exit(23)
 end
