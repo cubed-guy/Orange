@@ -2,6 +2,37 @@
 
 Orange is a strongly typed compiled language with polymorphic functions and structs.
 
+## Example
+
+_Check out [example.or](example.or) for a more thorough example._
+
+```ts
+// A simple program demonstrating polymorphism in Orange
+
+type Node T  // This is a polymorphic type. It takes a type as an argument at compile-time.
+    let data T
+    let next &Node T
+end
+
+fn main
+    // using the polymorphic type with different arguments
+    let i_node &Node int
+    let c_node &Node char
+
+    // dynamic memory allocation
+    i_node = alloc(Node int)
+    c_node = alloc(Node char)
+
+    // the dot '.' operator can be used on pointers
+    i_node.data = 5
+    c_node.data = 'E'
+
+    // println is a polymorphic function that can take an argument of any type
+    println(i_node.data)  // 5
+    println(c_node.data)  // E
+end
+```
+
 ## Setup
 
 1. Clone or [download](https://github.com/cubed-guy/orange/archive/refs/heads/master.zip) the repository.
