@@ -4,12 +4,14 @@ Orange is a strongly typed compiled language with polymorphic functions and stru
 
 ## Basic Syntax
 
+_A detailed look at the language can be found [in the wiki](../../wiki)._
+
 ```ts
 // 'type' is just a fancy word for 'struct'
 type Int_node
     // members of the type are declared using 'let'
     let data int
-    let next &Int_node  // we can do self referential members!
+    let next &Int_node  // we can do self-referential members!
 end
 
 // arguments start after the ':'
