@@ -4,10 +4,6 @@
 extern free: &any ptr
 extern puts: str s
 
-fn printf T: str fmt, T arg -> int
-	return T.printf(fmt, arg)
-end
-
 fn print T: T arg
 	T._print(arg)
 end

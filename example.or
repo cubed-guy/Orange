@@ -733,6 +733,40 @@ fn const3
 	println(const_mod::y)
 end
 
+fn big_returner T: T val -> Node T
+	let node Node T
+	node.next = 0
+	node.data = val
+	return node
+end
+
+fn big_args T: Node T node
+	println(node.data)
+	println(node.next)
+end
+
+fn big_moves
+	let x Node int
+	let y Node int
+
+	y.data = 5
+	y.next = 0
+
+	x = y
+
+	println(x.data)
+
+	y = big_returner(9)
+	println(y.data)
+	println(y.next)
+
+	// big_args(x)
+
+	let z &Node int
+	z = &y
+	x = *z
+end
+
 fn main
 	// basics()
 	// operations()
@@ -751,8 +785,10 @@ fn main
 	// passing_args()
 	// nested_types()
 	// imports()
-	generic_prints()
-	constants()
+	// generic_prints()
+	// constants()
 
-	exit(23)
+	big_moves()
+
+	// exit(23)
 end
