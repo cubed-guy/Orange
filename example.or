@@ -765,6 +765,62 @@ fn big_moves
 	let z &Node int
 	z = &y
 	x = *z
+	*z = y
+end
+
+enum FirstEnum
+	let i int
+	let c char
+
+	fn show_val: &FirstEnum self
+		let si int
+		let sc char
+
+		if self.i -> si
+			println(si)
+		end
+		if self.c -> sc
+			println(sc)
+		end
+	end
+end
+
+enum IP
+	let v4 str
+	let v6 str
+	let sneaky_sneak void
+end
+
+fn enums
+	let f FirstEnum
+	let g FirstEnum
+
+	f = FirstEnum.i{45}
+	g = FirstEnum.c{'n'}
+
+	let z FirstEnum
+
+	z = FirstEnum.i{0}
+
+	// if z.i
+	// 	println("Works")
+	// else
+	// 	println("Nada")
+	// end
+
+	let ip IP
+
+	ip = IP.v4{"192.168.191.2"}
+	// ip = IP.v6{"ff89::a:0:15ef"}
+	// ip = IP.sneaky_sneak{}
+
+	if ip.v4
+		println("The short one that needs NAT and stuff")
+	elif ip.v6
+		println("The long one")
+	else
+		println("Something else?")
+	end
 end
 
 fn main
@@ -777,7 +833,7 @@ fn main
 	// polymorphic_structs()
 	// classmethods()
 	// array_index()
-	// dictionaries()
+	// // dictionaries()
 	// streq_tests()
 	// mul_tests()
 	// more_meta()
@@ -787,8 +843,9 @@ fn main
 	// imports()
 	// generic_prints()
 	// constants()
+	// big_moves()
+	// enums()
 
-	big_moves()
 
 	// exit(23)
 end

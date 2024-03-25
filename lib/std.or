@@ -97,13 +97,13 @@ type Dict K V
 		let index int
 		index = hash % cap
 
-		let i int
-		i = 0
-
 		// printstr("Key pointer: ")
 		// printaddr(curr_key_ref)
 		// printstr("Key:         ")
 		// printaddr(*curr_key_ref)  // compiles only if key.deref is not None
+
+		let i int
+		i = 0
 
 		let curr_key K
 		curr_key = dict.keys[index]

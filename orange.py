@@ -15,15 +15,18 @@
 # DONE: module imports (modules are types)
 # DONE: arrays, dictionaries, std
 # DONE: constants
-# TODO: big moves
+# DONE: big moves
 # TODO: enums
+# TODO: import extern
 # TODO: SDL bindings
 # TODO: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
 # TODO: check non-void return
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
+# TODO: inline (and other?) optimisations
+# TODO: big args
 # TODO: SoA support
-# TODO: inline optimisation
 # TODO: stack arguments
+# TODO: more unaries
 
 from sys import argv
 from enum import Enum, auto
@@ -224,11 +227,14 @@ class Function_instance:
 		return f'_{self.id}{self.template.name}'
 
 class Variable:  # Instantiated when types are known
-	def __init__(self, name, offset, type, decl_line_no):
+	def __init__(
+		self, name, offset, type, decl_line_no, *, field_id = None
+	):
 		self.name = name
 		self.offset = offset
 		self.type = type
 		self.decl_line_no = decl_line_no
+		self.field_id = field_id  # for enums
 
 	def __repr__(self):
 		return f'Variable({self.name!r})'
@@ -256,7 +262,7 @@ class Clause:
 		return cls(f'{size_prefix(size)} [{addr}]', size=size)
 
 	def __repr__(self):
-		return f'{self.__class__.__name__}({self.asm_str})'
+		return f'{self.__class__.__name__}({self.asm_str}, size={self.size})'
 
 UNSPECIFIED_TYPE = type('UNSPECIFIED_TYPE', (), {
 	'__repr__': lambda s: f'Type<UNSPECIFIED>', 'deref': None
@@ -269,7 +275,7 @@ MISSING = type('MISSING', (), {
 })()
 
 class Type:
-	def __init__(self, name, size = 0, args = ()):
+	def __init__(self, name, size = 0, args = (), is_enum = False):
 		self.name = name
 		self.size = size
 		self.args = args
@@ -284,6 +290,7 @@ class Type:
 		self.fields = {}
 		self.consts = {}
 		self.instances = {}  # polymorphic instances
+		self.is_enum = is_enum
 
 	def __repr__(self):
 		return f'{self.__class__.__name__}({self.name})'
@@ -339,6 +346,45 @@ class Type:
 
 
 			if not match: continue
+			elif match[1] == 'enum':
+				# print('[P1] New type in', curr_type)
+
+				if in_function: err('Local type definitions are not yet supported')
+
+				name, *args = match[2].split()
+				# if args: err('Polymorphic types are not yet supported')
+
+				if name in curr_type_dict: err(f'Type {name!r} already defined')
+
+				if in_module or curr_type is not out_mod:
+					qual_name = f'{curr_type.name}.{name}'
+				else:
+					qual_name = name
+
+				curr_type = Type(qual_name, args = curr_type.args + tuple(args), is_enum = True)
+
+				type_stack.append(curr_type)
+				curr_type_dict[name] = curr_type
+				# print('NEW TYPE', curr_type)
+				# print(curr_type_dict)
+				curr_type_dict = curr_type.children
+
+				# scope_level += 1  # scope level goes up and down only if in_function
+
+				# if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
+				# 	if pointer:
+				# 		T = '&' + T
+				# else:
+				# 	T = types[T]
+				# 	if pointer:
+				# 		T = T.pointer()
+
+				# if T is curr_type:
+				# 	err(f'Recursive declaration. ({T} within {T})')
+
+				# if T is ANY_TYPE:
+				# 	err("A variable of type 'any' must be a pointer")
+
 			elif match[1] == 'type':
 				# print('[P1] New type in', curr_type)
 
@@ -489,7 +535,7 @@ class Type:
 
 			elif not in_function:
 				if match[1] == 'let':
-					print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
+					# print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
 
 					if not type_stack: err('Global variables are not yet supported')
 
@@ -514,22 +560,30 @@ class Type:
 					# else:
 						# print('GOT FAKE TYPE')
 
-					curr_type.fields[name] = (
-						Variable(name, curr_type.size, T, Shared.line_no)
+					if curr_type.is_enum:
+						offset = 0
+					else:
+						offset = curr_type.size
+
+					curr_type.fields[name] = Variable(
+						name, offset, T, Shared.line_no,
+						field_id = len(curr_type.fields),
 					)
 					# print(f'  Created a field {name!r} of {T}')
 					if curr_type.size is not None:
-						if isinstance(T, Type):
+						if not isinstance(T, Type):
 							# print('curr_type.size:', f'Adding {T.size} to size')
-							curr_type.size += T.size
-						else:
-							# print('curr_type.size:', f'Setting size to None')
 							curr_type.size = None
+						elif curr_type.is_enum:
+							curr_type.size = max(curr_type.size, T.size)
+						else:
+							curr_type.size += T.size
+							print('curr_type.size:', f'Setting size to None')
 					# else:
 						# print('curr_type.size:', 'Size is already None')
 
 				elif match[1] == 'const':
-					print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
+					# print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
 					split = match[2].split(maxsplit=1)
 					if len(split) != 2:
 						err('An expression is required to declare a constant')
@@ -552,6 +606,14 @@ class Type:
 						# print('   ', name, field.type)
 					# print()
 					type_stack.pop()  # no need to check emptiness.
+
+					if curr_type.is_enum:
+						n_variants = len(curr_type.fields)
+						discriminator_size = get_discriminator_size(n_variants)
+
+						curr_type.size += discriminator_size
+						for field in curr_type.fields.values():
+							field.offset += discriminator_size
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = out_mod
@@ -597,32 +659,40 @@ class Type:
 			err(f'{self} expects {len(self.args)} polymorphic arguments. '
 				f'Got {len(args)}: {args}.')
 
-		# print('INSTANTIATE TYPE', self)
-
 		if args in self.instances:
 			return self.instances[args]
+
+		print('INSTANTIATE NEW VARIANT OF', self, args)
 
 		if not args:
 			# not polymorphic
 
 			self.instances[args] = self
-			if not self.fields:
-				# print('Instantiated a type that has no fields, size =', self.size, [self])
-				return self  # for fn_wrapper types?
-			instance = self
-			instance.size = 0
-			instance_types = types.copy()
+			return self
+			# if not self.fields:
+			# 	# print('Instantiated a type that has no fields, size =', self.size, [self])
+			# 	return self  # for fn_wrapper types?
+			# instance = self
+			# return instance
 		else:
 			local_types = dict(zip(self.args, args))
 			instance_types = types | local_types
 
-			instance = Type(' '.join(T.name for T in [self, *args]))
+			instance = Type(
+				' '.join(T.name for T in [self, *args]), is_enum=self.is_enum
+			)
 			instance.args = args
 			instance.parent = self
 			instance.methods = self.methods
 			self.instances[args] = instance
 
-		# print('GET INSTANCE FIELDS OF', self, self.fields)
+		print('GET INSTANCE FIELDS OF', self, self.fields, f'({instance.fields = })')
+
+		n_variants = len(self.fields)
+		# (n_variants-1).bit_length() is the number of bits required
+		# (x-1)//n+1 rounds up?
+		discriminator_size = get_discriminator_size(n_variants)
+		print(f'  {n_variants = } {discriminator_size = }')
 
 		for name, field in self.fields.items():
 			T = field.type
@@ -637,9 +707,26 @@ class Type:
 
 				T, = parse_type_result
 
-			field = Variable(name, instance.size, T, field.decl_line_no)
+			if self.is_enum:
+				offset = discriminator_size
+			else:
+				offset = instance.size
+				instance.size += T.size
+
+			print(f'{instance.fields = }')
+
+			field = Variable(
+				name, offset, T, field.decl_line_no,
+				field_id = len(instance.fields),
+			)
+			print(f'Creating {field} with offset {field.offset} and id {field.field_id}')
 			instance.fields[name] = field
-			instance.size += T.size
+
+		if self.is_enum:
+			instance.size = (
+				discriminator_size
+				+ max(var.type.size for var in instance.fields.values())
+			)
 
 		return instance
 
@@ -992,6 +1079,64 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 	# print('Parse token', repr(token))
 
+	idx = Patterns.find_through_strings(token, '{')
+	if idx != -1:
+		if token[-1] != '}':
+			err("Enum token must end with '}'")
+
+		enum_val_token = token[idx+1:-1].strip()
+
+		if not enum_val_token:
+			insts = []
+			clauses = ()
+			T = VOID_TYPE
+		else:
+			insts, clauses, T = parse_token(
+				enum_val_token, types, variables=variables, virtual=virtual
+			)
+
+		type_str, _, variant_name = token[:idx].rpartition('.')
+
+		parse_type_result = parse_type(type_str, types, variables=variables)
+
+		if isinstance(parse_type_result, ParseTypeError):
+			err(f'In {type_str!r}, {parse_type_result}')
+		if len(parse_type_result) != 1:
+			err(
+				f'Expected exactly 1 type for enum. '
+				f'Got {len(parse_type_result)}'
+			)
+
+		Enum_type, = parse_type_result
+
+		if not Enum_type.is_enum: err(f'{Enum_type} is not an enum.')
+
+		variant_name = variant_name.strip()
+
+		if variant_name not in Enum_type.fields:
+			err(f'{variant_name!r} is not a variant of {Enum_type}')
+
+		variant = Enum_type.fields[variant_name]
+
+		# type checking
+		if T not in (variant.type, UNSPECIFIED_TYPE):
+			err(
+				f'Variant {variant_name!r} of {Enum_type} expects '
+				f'{variant.type}. Got {T} instead.'
+			)
+
+		clauses = (
+			Clause(
+				f'{variant.field_id}',
+				size=get_discriminator_size(len(Enum_type.fields))
+			),
+			*clauses,
+		)
+
+		output('; Enum clauses:', clauses)
+
+		return insts, clauses, Enum_type
+
 	clauses = ()
 	val = None
 	T   = UNSPECIFIED_TYPE
@@ -1017,6 +1162,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				err('Operations are not supported for non-standard sizes')
 			o_clause, = o_clauses
 			if o_insts: err(f'Expression {token!r} is too complex')  # we do this to prevent overwriting registers
+			if len(o_clauses) != 1:
+				err('Operations are not supported for non-standard sizes')
+			o_clause, = o_clauses
 			token = l_operand
 			break
 
@@ -1155,11 +1303,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		base_reg = 'rsp'
 
 		T = var.type
-		# print(f'Getting a field of {root!r} {T}')
+		print(f'Getting a field of {root!r} {T}')
 		for field in chain:
 
 			field = field.strip()
-			# print(f'  {field = }')
+			print(f'  {field = }')
 			if T is not STR_TYPE and T.deref is not None:
 				# We want to dereference T, so we first put it into a register
 				size = Type.get_size(T)  # always equal to PTR_SIZE
@@ -1174,25 +1322,41 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if field not in T.fields: err(f'{T} has no field {field!r}')
 
 			var = T.fields[field]
-			# for _name, _field in T.fields.items():
-				# print(' ', _name, _field.type)
-			# print(f'  {T}.fields[{field!r}]')
-			T = var.type
-			# print(f'  {field = } {T}')
-			offset += var.offset
+
+			print(f'  {T = } {T.is_enum = }')
+			if T.is_enum:
+				discriminator_size = get_discriminator_size(len(T.fields))
+
+				insts.append(
+					# crashed if you have more than 65536 fields
+					f'cmp {size_prefix(discriminator_size)} '
+					f'[{base_reg} + {offset}], {var.field_id}'
+				)
+
+				T = Flag.e
+				offset += discriminator_size
+			else:
+				# for _name, _field in T.fields.items():
+					# print(' ', _name, _field.type)
+				# print(f'  {T}.fields[{field!r}]')
+				T = var.type
+
+				offset += var.offset
+			print(f'  offset: {offset} ({var.offset = })')
 
 		base_addr = f'{base_reg} + {offset}'
 		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
 			insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{base_addr}]')
 			clauses = ()
+		elif isinstance(T, Flag):
+			clauses = ()
 		else:
-			# TODO: big move support
+			# DONE: big move support
 			# TODO: it needs to support stacks eventually
 			split_size(T.size)
 			clauses = []
 
-			# feels a little redundant since it'll remain being only one iteration
 			for size in split_size(Type.get_size(T)):
 				clauses.append(Clause(
 					f'{size_prefix(size)} [{base_reg} + {offset}]', size=size
@@ -1259,9 +1423,12 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		clause, = clauses
 		size = Type.get_size(T.deref)
+		split_sizes = split_size(size)
+
+		ptr_reg = dest_reg_fmts[len(split_sizes)-1]
 
 		insts.append(
-			f'mov {{{dest_reg_fmts[-1]}:{clause.size}}}, {clause.asm_str}'
+			f'mov {{{ptr_reg}:{clause.size}}}, {clause.asm_str}'
 		)
 
 		offset = 0
@@ -1269,7 +1436,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		output(';', dest_reg_fmts, size, split_size(size))
 		for dest_reg_fmt, sub_size in zip(dest_reg_fmts, split_size(size)):
 			clauses.append(Clause.ref(
-				f'{{{dest_reg_fmts[-1]}:{Type.get_size(T)}}} + {offset}'
+				f'{{{ptr_reg}:{Type.get_size(T)}}} + {offset}'
 			))
 			offset += sub_size
 		output(';', clauses)
@@ -1296,9 +1463,8 @@ def eval_const(exp, types, *, variables) -> Const:
 
 	# print('Eval expression', repr(token))
 
-	clause = None
+	clauses = ()
 	val = None
-	var = None
 	T   = UNSPECIFIED_TYPE
 	r_operand = None
 
@@ -1564,8 +1730,22 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 		else:
 			# [ ] T val, dest_reg flag -> test
 
+			if len(exp_clauses) > 1:
+				# TODO: if arr
+				err('Non-standard sized expressions not allowed as a condition')
+
+			if len(exp_clauses) == 1:
+				exp_clause, = exp_clauses
+			else:
+				exp_clause = None
+
 			for inst in insts:
-				output(inst.format(dest_reg=Register.a, aux_reg=Register.b))
+				output(
+					inst.format(
+						dest_reg=standard_dest_regs[0],
+						aux_reg=standard_dest_regs[1],
+					)
+				)
 
 			if T is UNSPECIFIED_TYPE and exp_clause.asm_str.isdigit():
 				val = int(exp_clause.asm_str)
@@ -1577,7 +1757,10 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 				return Flag.ALWAYS
 			elif exp_clause is not None:
 				# works only if exp_clause can be a dest
-				output(f'test {exp_clause.asm_str}, -1')
+				output(f'''test {exp_clause.asm_str.format(
+						dest_reg=standard_dest_regs[0],
+						aux_reg=standard_dest_regs[1],
+					)}, -1''')
 				return Flag.nz
 			else:
 				output(f'test {{0:{T.size}}}, {{0:{T.size}}}'
@@ -1849,7 +2032,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator == '|': inst = 'or'
 	elif operator in ('<', '>', '<=', '>='): inst = 'cmp'
 	elif operator in ('==', '!='):
-		# get_operator_insts() should take type of both operands
+		# TODO: get_operator_insts() should take type of both operands
 		if operand_type is STR_TYPE:
 			return [
 				f'mov {arg_regs[0]:8}, {{dest_reg:8}}',
@@ -1989,6 +2172,9 @@ def split_size(size) -> tuple[int, ...]:
 
 	return sizes
 
+def get_discriminator_size(n_variants):
+	return ((n_variants-1).bit_length()-1) // 8 + 1
+
 # Strongly typed
 
 if Shared.arch is Arch.win64:
@@ -2001,7 +2187,7 @@ dest_reg_fmts = ('dest_reg', 'aux_reg')
 
 # Builtins
 
-PTR_TYPE = Type('_ptr', PTR_SIZE, args=('T',))
+PTR_TYPE = Type('_Ptr', PTR_SIZE, args=('T',))
 PTR_TYPE.size = 8
 
 infile = Shared.infile
@@ -2014,7 +2200,7 @@ core_module = Type.read_module('_core', in_module=False)
 
 builtin_types = core_module.children
 
-CORE_PTR_TYPE = core_module.children['_ptr']
+CORE_PTR_TYPE = core_module.children['_Ptr']
 
 # modify the dict so it effects existing instances
 PTR_TYPE.methods |= CORE_PTR_TYPE.methods
@@ -2101,6 +2287,7 @@ while fn_queue:
 	print('Module:', curr_mod)
 	print('Variables:', variables)
 	print('Constants:', curr_mod.consts)
+	print('Types:', fn_types)
 
 	scope_level = 1
 
@@ -2151,9 +2338,7 @@ while fn_queue:
 
 			offset += T.size
 			local_variables.add(name)
-			variables[name] = (
-				Variable(name, offset, T, Shared.line_no)
-			)
+			variables[name] = Variable(name, offset, T, Shared.line_no)
 
 		elif match[1] == 'const':
 			split = match[2].split(maxsplit=1)
@@ -2371,6 +2556,9 @@ while fn_queue:
 		elif match[1] == 'type':
 			err('Local types are not yet supported')
 
+		elif match[1] == 'enum':
+			err('Local types are not yet supported')
+
 		elif match[1] == 'import':
 			err('Cannot import inside a function')
 
@@ -2398,12 +2586,11 @@ while fn_queue:
 				else:
 					dest_token = dest
 
-				insts, dest_clauses, dest_type = parse_token(dest_token, fn_types,
-					variables = variables)
+				insts, dest_clauses, dest_type = parse_token(
+					dest_token, fn_types, variables = variables
+				)
 
-				if insts: err('Destination too complex')
-
-				if dest_type is UNSPECIFIED_TYPE:
+				if dest_type is UNSPECIFIED_TYPE or not dest_clauses:
 					err(f'Cannot assign to {dest}')
 
 				if index != -1:
@@ -2458,8 +2645,7 @@ while fn_queue:
 							inst.format(dest_reg=Register.c, aux_reg=Register.d)
 						)
 
-					print(f'Moving into {dest_clauses!r} using {insts}')
-					output('; moving into dest')
+					# print(f'Moving into {dest_clauses!r} using {insts}')
 					for dest_reg, dest_clause in zip(
 						standard_dest_regs,
 						dest_clauses,
