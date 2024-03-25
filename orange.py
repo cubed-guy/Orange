@@ -244,6 +244,20 @@ class Const:  # Instantiated when types are known
 	def __repr__(self):
 		return f'Const({self.name} = {self.value!r})'
 
+class Clause:
+	def __init__(self, asm_str, *, size=8):
+		if size not in (1, 2, 4, 8): err('Invalid clause size:', size)
+
+		self.asm_str = asm_str
+		self.size = size
+
+	@classmethod
+	def ref(cls, addr, size=8):
+		return cls(f'{size_prefix(size)} [{addr}]', size=size)
+
+	def __repr__(self):
+		return f'{self.__class__.__name__}({self.asm_str})'
+
 UNSPECIFIED_TYPE = type('UNSPECIFIED_TYPE', (), {
 	'__repr__': lambda s: f'Type<UNSPECIFIED>', 'deref': None
 })()
@@ -998,6 +1012,10 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			o_insts, o_clauses, o_type = parse_token(r_operand, types,
 				variables=variables)
+
+			if len(o_clauses) != 1:
+				err('Operations are not supported for non-standard sizes')
+			o_clause, = o_clauses
 			if o_insts: err(f'Expression {token!r} is too complex')  # we do this to prevent overwriting registers
 			token = l_operand
 			break
@@ -1062,9 +1080,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			string = bytes(exp_type.name, 'utf-8')
 			if virtual:
-				clauses = ('_dummy_string_label',)
+				clauses = (Clause('_dummy_string_label'),)
 			else:
-				clauses = (get_string_label(string, strings),)
+				clauses = (Clause(get_string_label(string, strings)),)
 			T = STR_TYPE
 
 		elif field == 'name':
@@ -1077,7 +1095,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			T, = parse_type_result
 
 			string = bytes(T.name, 'utf-8')
-			clauses = (get_string_label(string, strings),)
+			clauses = (Clause(get_string_label(string, strings)),)
 			T = STR_TYPE
 
 		else:  # TODO: var:len
@@ -1119,7 +1137,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				sizes = split_size(T.size)
 				clauses = []
 				for size in sizes:
-					clauses.append(f'{size_prefix(size)} [rsp + {offset}]')
+					clauses.append(Clause(
+						f'{size_prefix(size)} [rsp + {offset}]', size=size
+					))
 					offset += size
 
 	elif dot_idx != -1:
@@ -1174,7 +1194,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			# feels a little redundant since it'll remain being only one iteration
 			for size in split_size(Type.get_size(T)):
-				clauses.append(f'{size_prefix(size)} [{base_reg} + {offset}]')
+				clauses.append(Clause(
+					f'{size_prefix(size)} [{base_reg} + {offset}]', size=size
+				))
 				offset += size
 
 	elif token.isdigit():
@@ -1219,7 +1241,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if addr is Address_modes.ADDRESS: err('Cannot take address of string literal')
 
 		string = parse_string(token)
-		clauses = (get_string_label(string, strings),)
+		clauses = (Clause(get_string_label(string, strings)),)
 		T = STR_TYPE
 
 	else:
@@ -1227,7 +1249,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 
 	if val is not None:
-		clauses = (f'{val}',)
+		clauses = (Clause(f'{val}'),)
 
 
 	if addr is Address_modes.DEREF:
@@ -1239,29 +1261,29 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		size = Type.get_size(T.deref)
 
 		insts.append(
-			f'mov {{{dest_reg_fmts[-1]}:{Type.get_size(T)}}}, {clause}'
+			f'mov {{{dest_reg_fmts[-1]}:{clause.size}}}, {clause.asm_str}'
 		)
 
 		offset = 0
 		clauses = []
 		output(';', dest_reg_fmts, size, split_size(size))
 		for dest_reg_fmt, sub_size in zip(dest_reg_fmts, split_size(size)):
-			clauses.append(
-				f'{size_prefix(sub_size)} '
-				f'[{{{dest_reg_fmts[-1]}:{Type.get_size(T)}}} + {offset}]'
-			)
+			clauses.append(Clause.ref(
+				f'{{{dest_reg_fmts[-1]}:{Type.get_size(T)}}} + {offset}'
+			))
 			offset += sub_size
 		output(';', clauses)
 		T = T.deref
 
 	if r_operand is not None:
+
 		insts += [
 			# *o_insts,  # too complex if not empty
 
-			*(f'mov {{{dest_reg_fmt}:{Type.get_size(T)}}}, {clause}'
+			*(f'mov {{{dest_reg_fmt}:{clause.size}}}, {clause.asm_str}'
 				for dest_reg_fmt, clause in zip(dest_reg_fmts, clauses)),
 
-			*get_operator_insts(operator, o_clauses, o_type)
+			*get_operator_insts(operator, o_clause, o_type)
 		]
 		clauses = ()
 		# print(f'OPERATOR {operator!r} using {T} and {o_type} ({addr = }) gives... ', end='')
@@ -1491,8 +1513,8 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 			if dest_regs is Flag: return T  # returns flag if relational
 
-			if T.value is Flag.ALWAYS:  exp_clauses = ('1',)
-			elif T.value is Flag.NEVER: exp_clauses = ('0',)
+			if T.value is Flag.ALWAYS:  exp_clauses = (Clause('1'),)
+			elif T.value is Flag.NEVER: exp_clauses = (Clause('0'),)
 
 			# [x] T flag, dest_reg val -> setcc; ALWAYS/NEVER converted to values
 			else:
@@ -1529,11 +1551,13 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 				output(inst.format(dest_reg=dest_reg, aux_reg=aux_reg))
 
 			output(';', dest_regs, exp_clauses, size)
-			for dest_reg, sub_clause, sub_size in zip(dest_regs, exp_clauses, split_size(size)):
+			for dest_reg, sub_clause in zip(dest_regs, exp_clauses):
 				# print('Moving into rax', T, size)
 				output(
-					f'mov {dest_reg:{sub_size}}, '
-					f'{sub_clause.format(dest_reg=dest_reg, aux_reg=aux_reg)}'
+					f'mov {dest_reg:{sub_clause.size}}, '
+					f'''{sub_clause.asm_str.format(
+						dest_reg=dest_reg, aux_reg=aux_reg
+					)}'''
 				)
 
 			return T
@@ -1543,8 +1567,8 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 			for inst in insts:
 				output(inst.format(dest_reg=Register.a, aux_reg=Register.b))
 
-			if T is UNSPECIFIED_TYPE and exp_clause.isdigit():
-				val = int(exp_clause)
+			if T is UNSPECIFIED_TYPE and exp_clause.asm_str.isdigit():
+				val = int(exp_clause.asm_str)
 				if val: return Flag.ALWAYS
 				else: return Flag.NEVER
 
@@ -1553,7 +1577,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 				return Flag.ALWAYS
 			elif exp_clause is not None:
 				# works only if exp_clause can be a dest
-				output(f'test {exp_clause}, -1')
+				output(f'test {exp_clause.asm_str}, -1')
 				return Flag.nz
 			else:
 				output(f'test {{0:{T.size}}}, {{0:{T.size}}}'
@@ -1582,20 +1606,20 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 		# TODO: What if I want an integer of a different type?
 
+		if len(clauses) != 1:
+			err('Non standard sizes are not yet supported in function calls')
+
 		for inst in insts:
 			output(inst.format(dest_reg=arg_regs[0], aux_reg=arg_regs[1]))
 		for clause, arg_reg in zip(clauses, arg_regs):
-			if clause is not None:
-				reg_str = arg_regs[0].encode(size=Type.get_size(T))
-				output(
-					f'mov {reg_str}, '
-					f'''{clause.format(
-						dest_reg=arg_regs[0], aux_reg=arg_regs[1]
-					)}'''
-				)
-
-		if len(clauses) != 1:
-			err('Non standard sizes are not yet supported in function calls')
+			if clause is None: continue
+			reg_str = arg_regs[0].encode(size=clause.size)
+			output(
+				f'mov {reg_str}, '
+				f'''{clause.asm_str.format(
+					dest_reg=arg_regs[0], aux_reg=arg_regs[1]
+				)}'''
+			)
 
 		arg_types = [T]
 		fn_name = f'{T.name}.{fn_name}'
@@ -1679,8 +1703,8 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 			)
 		elif clauses:
 			clause, = clauses
-			reg_str = arg_reg.encode(size=Type.get_size(T))
-			output(f'mov {reg_str}, {clause.format(dest_reg=arg_reg)}')
+			reg_str = arg_reg.encode(size=clause.size)
+			output(f'mov {reg_str}, {clause.asm_str.format(dest_reg=arg_reg)}')
 
 		arg_types.append(T)
 
@@ -1829,7 +1853,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 		if operand_type is STR_TYPE:
 			return [
 				f'mov {arg_regs[0]:8}, {{dest_reg:8}}',
-				f'mov {arg_regs[1]:8}, {operand_clause}',
+				f'mov {arg_regs[1]:{operand_clause.size}}, {operand_clause.asm_str}',
 				'call strcmp',
 				'cmp al, 0'
 			]
@@ -1837,13 +1861,13 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator == '<<':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.c:{size}}, {operand_clause}',
+			f'mov {Register.c:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'shl {{dest_reg:{size}}}, cl',
 		]
 	elif operator == '>>':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.c:{size}}, {operand_clause}',
+			f'mov {Register.c:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'shr {{dest_reg:{size}}}, cl',
 		]
 	elif operator == '*':
@@ -1851,7 +1875,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 		return [
 			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
 			f'xor rdx, rdx',
-			f'mov {Register.b:{size}}, {operand_clause}',
+			f'mov {Register.b:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'mul {Register.b:{size}}',
 			f'mov {{dest_reg:{size}}}, {Register.a:{size}}'
 		]
@@ -1860,7 +1884,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 		return [
 			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
 			f'xor rdx, rdx',
-			f'mov {Register.b:{size}}, {operand_clause}',
+			f'mov {Register.b:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'div {Register.b:{size}}',
 			f'mov {{dest_reg:{size}}}, {Register.a:{size}}'
 		]
@@ -1869,15 +1893,15 @@ def get_operator_insts(operator, operand_clause, operand_type):
 		return [
 			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
 			f'xor rdx, rdx',
-			f'mov {Register.b:{size}}, {operand_clause}',
-			f'div {Register.b:{size}}',
+			f'mov {Register.b:{operand_clause.size}}, {operand_clause.asm_str}',
+			f'div {Register.b:{operand_clause.size}}',
 			f'mov {{dest_reg:{size}}}, {Register.d:{size}}'
 		]
 	else:
 		# others?
 		err(f'Operator {operator} not supported')
 
-	return [f'{inst} {{dest_reg:{Type.get_size(operand_type)}}}, {operand_clause}']
+	return [f'{inst} {{dest_reg:{operand_clause.size}}}, {operand_clause.asm_str}']
 
 def operator_result_type(operator, l_type, r_type) -> Type:
 	# str  + int
@@ -2404,8 +2428,8 @@ while fn_queue:
 
 					# print(f'{dest_clause = }')
 					output(
-						f'mov {first_arg:{dest_type.size}}, '
-						f'''{dest_clause.format(
+						f'mov {first_arg:{dest_clause.size}}, '
+						f'''{dest_clause.asm_str.format(
 							dest_reg=first_arg, aux_reg=second_arg
 						)}'''
 					)
@@ -2436,16 +2460,15 @@ while fn_queue:
 
 					print(f'Moving into {dest_clauses!r} using {insts}')
 					output('; moving into dest')
-					for dest_reg, dest_clause, clause_size in zip(
+					for dest_reg, dest_clause in zip(
 						standard_dest_regs,
 						dest_clauses,
-						split_size(Type.get_size(dest_type)),
 					):
 						output(
-							f'''mov {dest_clause.format(
+							f'''mov {dest_clause.asm_str.format(
 								dest_reg=arg_regs[0], aux_reg=arg_regs[1]
 							)}, '''
-							f'{dest_reg:{clause_size}}'
+							f'{dest_reg:{dest_clause.size}}'
 						)
 
 			output()
