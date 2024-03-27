@@ -16,7 +16,7 @@
 # DONE: arrays, dictionaries, std
 # DONE: constants
 # DONE: big moves
-# TODO: enums
+# DONE: enums
 # TODO: import extern
 # TODO: SDL bindings
 # TODO: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
@@ -1149,11 +1149,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 	clauses = ()
 	val = None
+	var = None
 	T   = UNSPECIFIED_TYPE
 	insts = []
-	r_operand = None
 
-	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>|^&+-*/%'):  # big ones first
+	for operator in ('<=', '>=', '<<', '>>', '==', '!=', '->', *'<>|^&+-*/%'):  # big ones first
 		operator_idx = Patterns.find_through_strings(token, operator)
 		if operator_idx != -1:
 			l_operand = token[:operator_idx].strip()
@@ -1170,13 +1170,12 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			if len(o_clauses) != 1:
 				err('Operations are not supported for non-standard sizes')
-			o_clause, = o_clauses
 			if o_insts: err(f'Expression {token!r} is too complex')  # we do this to prevent overwriting registers
-			if len(o_clauses) != 1:
-				err('Operations are not supported for non-standard sizes')
 			o_clause, = o_clauses
 			token = l_operand
 			break
+	else:
+		operator = None
 
 	if token.startswith('&'):
 		addr = Address_modes.ADDRESS
@@ -1452,7 +1451,32 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		output(';', clauses)
 		T = T.deref
 
-	if r_operand is not None:
+	if operator == '->':  # this is not your typical operator
+		if var is None or not isinstance(T, Flag):
+			err("Expected an enum variant field before '->'")
+
+		if var.type is not o_type:
+			err(
+				f'Enum unwrap returns {var.type}. '
+				f'Trying to assign to {o_type} instead'
+			)
+
+		size = var.type.size
+
+		ctrl_no = Ctrl.next()
+
+		insts += [
+			# preserves flag state
+
+			f'j{(~T).name} _U{ctrl_no}',
+			f'mov {{{dest_reg_fmts[0]}:{size}}}, '
+			f'{size_prefix(size)} [{base_reg} + {offset}]',
+
+			f'mov {o_clause.asm_str}, {{dest_reg:{size}}}',
+			f'_U{ctrl_no}:',
+		]
+
+	elif operator is not None:
 
 		insts += [
 			# *o_insts,  # too complex if not empty

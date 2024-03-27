@@ -810,7 +810,7 @@ fn enums
 
 	let ip IP
 
-	ip = IP.v4{"192.168.191.2"}
+	ip = IP.v6{"192.168.191.9"}
 	// ip = IP.v6{"ff89::a:0:15ef"}
 	// ip = IP.sneaky_sneak{}
 
@@ -820,6 +820,12 @@ fn enums
 		println("The long one")
 	else
 		println("Something else?")
+	end
+
+	let ip_str str
+
+	if ip.v4 -> ip_str
+		println(ip_str)
 	end
 end
 
@@ -844,7 +850,7 @@ fn main
 	// generic_prints()
 	// constants()
 	// big_moves()
-	// enums()
+	enums()
 
 
 	// exit(23)
