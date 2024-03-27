@@ -972,6 +972,8 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 		T = exp_type
 		if T is UNSPECIFIED_TYPE:
 			T = INT_TYPE
+		elif isinstance(T, Flag):
+			err('Using booleans is supported only in conditionals')
 
 	else:
 		T = field
