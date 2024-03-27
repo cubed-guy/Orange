@@ -826,6 +826,14 @@ class Exp_type(Enum):
 	CALL = object()
 
 class Ctrl:
+	ctrl_no = 0
+
+	@classmethod
+	def next(cls):
+		out = cls.ctrl_no
+		cls.ctrl_no += 1
+		return out
+
 	def __init__(self, ctrl_no, branch: Branch):
 		self.ctrl_no = ctrl_no
 		self.branch = branch
@@ -2249,7 +2257,6 @@ main_fn.add_sub(())
 fn_queue = [(main_fn, ())]
 
 strings = {}
-ctrl_no = 0
 
 while fn_queue:
 	fn, instance_key = fn_queue.pop(0)
@@ -2452,11 +2459,12 @@ while fn_queue:
 				output('ret')
 
 		elif match[1] == 'while':
+			ctrl_no = Ctrl.next()
+
 			ctrl = Ctrl(ctrl_no, Branch.WHILE)
 			output(f'{ctrl.label}:')
 			ctrl_stack.append(ctrl)
 
-			# TODO: parse_exp() returns a Flag object if dest_reg is flags
 			ret_flag = parse_exp(match[2].strip(),
 				dest_regs = Flag, fn_queue = fn_queue,
 				variables = variables
@@ -2467,9 +2475,8 @@ while fn_queue:
 			elif ret_flag is not Flag.NEVER:
 				output(f'j{(~ret_flag).name} _E{ctrl_no}')
 
-			ctrl_no += 1
-
 		elif match[1] == 'if':
+			ctrl_no = Ctrl.next()
 			ctrl = Ctrl(ctrl_no, 0)
 			ctrl_stack.append(ctrl)
 
@@ -2483,8 +2490,6 @@ while fn_queue:
 				output(f'jmp _E{ctrl_no}_1')
 			elif ret_flag is not Flag.NEVER:
 				output(f'j{(~ret_flag).name} _E{ctrl_no}_1')
-
-			ctrl_no += 1
 
 		elif match[1] == 'elif':
 			if not ctrl_stack or ctrl_stack[-1].branch is Branch.WHILE:
