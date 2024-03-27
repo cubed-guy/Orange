@@ -18,7 +18,7 @@ type UnboundArr T
 
 	fn _getref: UnboundArr T self, int n -> &T
 		let scaled_index int
-		scaled_index = n * self:type:size
+		scaled_index = n * T:size
 		return self._ptr + scaled_index
 	end
 
@@ -32,6 +32,10 @@ type UnboundArr T
 		let ref &T
 		ref = &self[n]
 		*ref = value
+	end
+
+	fn alloc: &UnboundArr T self, int n
+		self._ptr = alloc(T, n)
 	end
 end
 
@@ -54,6 +58,35 @@ type Arr T
 		ref = &self._arr[n]
 		*ref = value
 	end
+
+	fn alloc: &Arr T self, int len
+		UnboundArr T.alloc(&self._arr, len)
+		self.len = len
+	end
+
+	fn _print: &Arr T self
+		let i int
+		i = 1
+		print('[')
+		let el T
+		if self.len
+			el = self[0]
+			print(el)
+		end
+		while self.len > i
+			el = self[i]
+			print(", ")
+			print(el)
+			i = i + 1
+		end
+		print(']')
+
+	end
+
+	// // These are all equivalent
+	// arr := arr:type.alloc(34)
+	// arr := Arr T.alloc(34)
+	// Arr T.alloc(arr, 34)
 end
 
 type Dict K V
@@ -71,6 +104,7 @@ type Dict K V
 		out.keys._ptr = alloc(K, cap)
 		out.values._ptr = alloc(V, cap)
 		out.used = 0
+
 
 		let i int
 		i = 0
