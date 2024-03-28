@@ -17,26 +17,24 @@
 # DONE: constants
 # DONE: big moves
 # DONE: enums
-# TODO: import extern
+# DONE: import extern
 # TODO: SDL bindings
 # TODO: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
 # TODO: check non-void return
+# TODO: enum consts
+# TODO: more unaries
+# TODO: big args
+# TODO: stack arguments
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
 # TODO: inline (and other?) optimisations
-# TODO: big args
 # TODO: SoA support
-# TODO: stack arguments
-# TODO: more unaries
 
 from sys import argv
 from enum import Enum, auto
 from enum import Flag as Enum_flag
 from typing import Union, Optional
-from os import system
+from os import system, getcwd
 import os.path
-
-core_file = open('lib/core.or')
-std_file = open('lib/std.or')
 
 class Shared:
 	debug = True
@@ -45,6 +43,8 @@ class Shared:
 	arch = None
 	line = '[DEBUG] ** Empty line **'
 	line_no = 0
+	libraries = set()
+	imports = {}
 
 class Subscriptable:
 	def __getitem__(self, key):
@@ -83,7 +83,7 @@ if len(argv)<3: argv.append(file_name+'.asm')
 PTR_SIZE = 8
 crlf = int(Shared.arch is Arch.win64)
 
-Shared.infile = open(argv[1])
+arg_infile = open(argv[1])
 Shared.out = open(argv[2], 'w')
 def output(*args, file = Shared.out, **kwargs):
 	if None in args:
@@ -317,6 +317,8 @@ class Type:
 		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
 		print(f'Start module {Shared.infile.name!r} {out_mod.name}')
 
+		curr_mod_path = os.getcwd()
+
 		if core_module is None:
 			alloc_fn = Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0)
 			alloc_fn.add_sub(())
@@ -432,29 +434,49 @@ class Type:
 				name, path_string = match[2].split(maxsplit=1)
 				# if args: err('Polymorphic types are not yet supported')
 
-				if name in curr_type_dict: err(f'Type {name!r} already defined')
-
 				mod_path = parse_string(path_string)
+				mod_path = os.path.expanduser(mod_path)
+				mod_path = os.path.abspath(mod_path)
 
-				absolute_path = os.path.expanduser(mod_path)
-
-				if not os.path.exists(absolute_path):
+				if not os.path.exists(mod_path):
 					err(f'Cannot import module. Path not found: {mod_path!r}')
 
-				module_file = open(absolute_path.decode('utf-8'))
-				infile = Shared.infile
-				Shared.infile = module_file
+				if name == 'extern':
+					'''
+					'import extern' adds a library file so that its functions
+					can be introduced using 'extern'
+
+					'extern as name' should be a thing. But, it's not.
+					'''
+
+					Shared.libraries.add(mod_path.decode('utf-8'))
+
+					continue
+
+				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
 				if in_module or curr_type is not out_mod:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
 
-				module = Type.read_module(
-					qual_name, args = curr_type.args
-				)
+				if mod_path in Shared.imports:
+					# This makes it so that the same type imported multiple times
+					# does not panic the type checker.
+					# (Does not account for symbolic links)
+					module = Shared.imports[mod_path]
+				else:
+					module_file = open(mod_path.decode('utf-8'))
+					infile = Shared.infile
+					Shared.infile = module_file
+					os.chdir(os.path.dirname(mod_path))
+					module = Type.read_module(
+						qual_name, args = curr_type.args
+					)
+					os.chdir(curr_mod_path)
+					Shared.infile = infile
+					Shared.imports[mod_path] = module
 
-				Shared.infile = infile
 				curr_type_dict[name] = module
 				# print('NEW MODULE', module)
 
@@ -2219,17 +2241,19 @@ else:
 standard_dest_regs = (Register.a, Register.b)
 dest_reg_fmts = ('dest_reg', 'aux_reg')
 
+orange_dir = os.path.dirname(__file__)
+core_file = open(f'{orange_dir}/lib/core.or')
+std_file = open(f'{orange_dir}/lib/std.or')
+
 # Builtins
 
 PTR_TYPE = Type('_Ptr', PTR_SIZE, args=('T',))
 PTR_TYPE.size = 8
 
-infile = Shared.infile
-Shared.infile = core_file
-
 types = {}
 core_module = None
 
+Shared.infile = core_file
 core_module = Type.read_module('_core', in_module=False)
 
 builtin_types = core_module.children
@@ -2265,14 +2289,16 @@ STR_TYPE.deref = CHAR_TYPE
 
 builtin_type_set = {*builtin_types.values(), UNSPECIFIED_TYPE, FLAG_TYPE}
 
-
 Shared.infile = std_file
 std_module = Type.read_module('_std', in_module=False)
 
 core_module.methods |= std_module.methods
 core_module.children |= std_module.children
 
-Shared.infile = infile
+main_dir = os.path.dirname(os.path.abspath(argv[1]))
+os.chdir(main_dir)
+
+Shared.infile = arg_infile
 main_module = Type.read_module('_main', in_module=False)
 
 if 'main' not in main_module.methods:
@@ -2729,8 +2755,14 @@ if Shared.link:
 	else:
 		raise TypeError(f'Unsupported architecture {Shared.arch!r}')
 
-	commands.append(f"{linker} \"{file_name}.o\" -o \"{file_name}{bin_extension}\"")
+	commands.append(
+		f'{linker} "{file_name}.o" -o "{file_name}{bin_extension}"'
+
+		# NOTE: prone to injection
+		+ ''.join(f' -L "{library}"' for library in Shared.libraries)
+	)
 
 if commands:
 	cmd = ' && '.join(commands)
+	# print('running', repr(cmd))
 	result = system(cmd)
