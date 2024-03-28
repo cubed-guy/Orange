@@ -829,7 +829,7 @@ fn enums
 	end
 end
 
-import extern "..\\..\\SDL\\SDL2-2.24.1\\x86_64-w64-mingw32\\lib"
+import extern "SDL\\x86_64-w64-mingw32\\lib"  // we need ifdefs
 
 fn main
 	// basics()

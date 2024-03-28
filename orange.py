@@ -28,6 +28,7 @@
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
 # TODO: inline (and other?) optimisations
 # TODO: SoA support
+# TODO: conditional compilation
 
 from sys import argv
 from enum import Enum, auto
@@ -439,7 +440,7 @@ class Type:
 				mod_path = os.path.abspath(mod_path)
 
 				if not os.path.exists(mod_path):
-					err(f'Cannot import module. Path not found: {mod_path!r}')
+					err(f'Cannot import module. Path not found: {mod_path.decode()}')
 
 				if name == 'extern':
 					'''
