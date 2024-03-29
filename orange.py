@@ -45,6 +45,7 @@ class Shared:
 	line = '[DEBUG] ** Empty line **'
 	line_no = 0
 	libraries = set()
+	library_paths = set()
 	imports = {}
 
 class Subscriptable:
@@ -450,7 +451,16 @@ class Type:
 					'extern as name' should be a thing. But, it's not.
 					'''
 
-					Shared.libraries.add(mod_path.decode('utf-8'))
+					mod_dir, mod_name = os.path.split(mod_path.decode('utf-8'))
+
+					if not (mod_name.startswith('lib') and mod_name.endswith('.a')):
+						err('import extern requires file names of the form lib*.a')
+
+					mod_name = mod_name.removeprefix('lib')
+					mod_name = mod_name.removesuffix('.a')
+
+					Shared.libraries.add(mod_name)
+					Shared.library_paths.add(mod_dir)
 
 					continue
 
@@ -2760,10 +2770,11 @@ if Shared.link:
 		f'{linker} "{file_name}.o" -o "{file_name}{bin_extension}"'
 
 		# NOTE: prone to injection
-		+ ''.join(f' -L "{library}"' for library in Shared.libraries)
+		+ ''.join(f' -L{library}' for library in Shared.library_paths)
+		+ ''.join(f' -l{library}' for library in Shared.libraries)
 	)
 
 if commands:
 	cmd = ' && '.join(commands)
-	# print('running', repr(cmd))
+	print('running:\n', cmd)
 	result = system(cmd)

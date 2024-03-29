@@ -829,7 +829,18 @@ fn enums
 	end
 end
 
-import extern "SDL\\x86_64-w64-mingw32\\lib"  // we need ifdefs
+import SDL "SDL/SDL.or"
+
+fn sdl_tests
+	if SDL.SDL_Init(SDL::INIT_VIDEO)
+		println("Could not initialise SDL")
+		return
+	end
+
+	println("SDL Initialised succesfully!")
+
+	println(SDL::INIT_VIDEO)
+end
 
 fn main
 	// basics()
@@ -852,8 +863,10 @@ fn main
 	// generic_prints()
 	// constants()
 	// big_moves()
-	enums()
+	// enums()
+	sdl_tests()
 
+	println("HI")
 
 	// exit(23)
 end
