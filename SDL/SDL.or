@@ -1,0 +1,31 @@
+import extern "x86_64-w64-mingw32\\lib\\libSDL2.a"  // we need ifdefs
+import extern "x86_64-w64-mingw32\\lib\\libSDL2main.a"
+import extern "x86_64-w64-mingw32\\lib\\libSDL2_image.a"
+
+import video   "SDL_video.or"
+import surface "SDL_surface.or"
+import pixels  "SDL_pixels.or"
+import rect    "SDL_rect.or"
+
+enum InitFlags
+	const TIMER                1// 0x00000001u
+	const AUDIO               16// 0x00000010u
+	const VIDEO               32// 0x00000020u  // SDL_INIT_VIDEO implies SDL_INIT_EVENTS
+	const JOYSTICK           512// 0x00000200u  // SDL_INIT_JOYSTICK implies SDL_INIT_EVENTS
+	const HAPTIC            4096// 0x00001000u
+	const GAMECONTROLLER    8192// 0x00002000u  // SDL_INIT_GAMECONTROLLER implies SDL_INIT_JOYSTICK
+	const EVENTS           16384// 0x00004000u
+	const SENSOR           32768// 0x00008000u
+	const NOPARACHUTE    1048576// 0x00100000u  // compatibility; this flag is ignored.
+
+	// INIT_TIMER | INIT_AUDIO | INIT_VIDEO | INIT_EVENTS | INIT_JOYSTICK | INIT_HAPTIC | INIT_GAMECONTROLLER | INIT_SENSOR
+	const EVERYTHING 62001
+
+	let from int
+end
+
+extern SDL_Init: InitFlags flags -> int
+extern SDL_InitSubSystem: InitFlags flags -> int
+extern SDL_QuitSubSystem: InitFlags flags
+extern SDL_WasInit: InitFlags flags -> int
+extern SDL_Quit

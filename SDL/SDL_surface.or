@@ -1,0 +1,33 @@
+import pixels "SDL_pixels.or"
+import rect "SDL_rect.or"
+
+// Opaque type ie UNDEREFERENCABLE!
+enum BlitMap
+end
+
+type Surface
+	let flags int               // < Read-only
+	let format &pixels.Format   // < Read-only
+	let w int                   // < Read-only
+	let h int                   // < Read-only
+	let pitch int               // < Read-only
+	let pixels &any             // < Read-write
+
+	// Application data associated with the surface
+	let userdata &any           // < Read-write
+
+	// information needed for surfaces requiring locks
+	let locked int              // < Read-only
+
+	// list of BlitMap that hold a reference to this surface
+	let list_blitmap &any       // < Private
+
+	// clipping information
+	let clip_rect rect.Rect     // < Read-only
+
+	// info for fast blit mapping to other surfaces
+	let map &BlitMap            // < Private
+
+	// Reference count -- used when freeing surface
+	let refcount int            // < Read-mostly
+end

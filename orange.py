@@ -254,7 +254,7 @@ class Const:  # Instantiated when types are known
 
 class Clause:
 	def __init__(self, asm_str, *, size=8):
-		if size not in (1, 2, 4, 8): err('Invalid clause size:', size)
+		if size not in (1, 2, 4, 8): err(f'Invalid clause size: {size}')
 
 		self.asm_str = asm_str
 		self.size = size
@@ -369,8 +369,7 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				# print('NEW TYPE', curr_type)
-				# print(curr_type_dict)
+				print('NEW ENUM', curr_type)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -408,8 +407,7 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				# print('NEW TYPE', curr_type)
-				# print(curr_type_dict)
+				print('NEW TYPE', curr_type)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -522,7 +520,7 @@ class Type:
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 					ret_type, out_mod, tell, Shared.line_no, Shared.infile
 				)
-				# print(f'NEW FUNCTION HEADER {fn}: {fn.args = }')
+				print(f'FUNCTION {name}')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -561,7 +559,7 @@ class Type:
 					ret_type, out_mod, None, Shared.line_no, Shared.infile,
 					isextern = True
 				)
-				# print(f'NEW EXTERN {name}: {fn.args = }')
+				print(f'EXTERN   {name}')
 				curr_type.methods[name] = fn
 
 				output('extern', name)
@@ -611,7 +609,7 @@ class Type:
 							curr_type.size = max(curr_type.size, T.size)
 						else:
 							curr_type.size += T.size
-							print('curr_type.size:', f'Setting size to None')
+							# print('curr_type.size:', f'Setting size to None')
 					# else:
 						# print('curr_type.size:', 'Size is already None')
 
@@ -626,12 +624,12 @@ class Type:
 					if name in curr_type.consts:
 						err(f'{name!r} is already a declared constant')
 
-					print(f'Declared a constant {name!r} associated to {curr_type}')
+					# print(f'Declared a constant {name!r} associated to {curr_type}')
 					const_var = eval_const(exp, curr_type_dict,
 						variables=curr_type.consts)
 					# const_var.name = name
 					curr_type.consts[name] = const_var
-					print(f'Constants in {curr_type}: {curr_type.consts}')
+					# print(f'Constants in {curr_type}: {curr_type.consts}')
 
 				elif match[1] == 'end':
 					# print(f'[P1] End of {curr_type!r}, size = {curr_type.size}')
@@ -647,6 +645,10 @@ class Type:
 						curr_type.size += discriminator_size
 						for field in curr_type.fields.values():
 							field.offset += discriminator_size
+
+						print('END ENUM', curr_type)
+					else:
+						print('END TYPE', curr_type)
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = out_mod
@@ -667,7 +669,6 @@ class Type:
 				if scope_level < 0:
 					err('end statement does not match any block')
 				elif scope_level == 0:
-					# print(f'[P1] End function')
 					in_function = False
 				# else:
 				# 	print(f'[P1] Exit construct')
@@ -695,7 +696,7 @@ class Type:
 		if args in self.instances:
 			return self.instances[args]
 
-		print('INSTANTIATE NEW VARIANT OF', self, args)
+		# print(f'INSTANTIATE NEW VARIANT OF {self.name}{args}, enum: {self.is_enum}')
 
 		if not args:
 			# not polymorphic
@@ -719,13 +720,12 @@ class Type:
 			instance.methods = self.methods
 			self.instances[args] = instance
 
-		print('GET INSTANCE FIELDS OF', self, self.fields, f'({instance.fields = })')
+		# print('GET INSTANCE FIELDS OF', self, self.fields, f'({instance.fields = })')
 
 		n_variants = len(self.fields)
 		# (n_variants-1).bit_length() is the number of bits required
 		# (x-1)//n+1 rounds up?
 		discriminator_size = get_discriminator_size(n_variants)
-		print(f'  {n_variants = } {discriminator_size = }')
 
 		for name, field in self.fields.items():
 			T = field.type
@@ -746,19 +746,19 @@ class Type:
 				offset = instance.size
 				instance.size += T.size
 
-			print(f'{instance.fields = }')
+			# print(f'{instance.fields = }')
 
 			field = Variable(
 				name, offset, T, field.decl_line_no,
 				field_id = len(instance.fields),
 			)
-			print(f'Creating {field} with offset {field.offset} and id {field.field_id}')
+			# print(f'Creating {field} with offset {field.offset} and id {field.field_id}')
 			instance.fields[name] = field
 
 		if self.is_enum:
 			instance.size = (
 				discriminator_size
-				+ max(var.type.size for var in instance.fields.values())
+				+ max((var.type.size for var in instance.fields.values()), default=0)
 			)
 
 		return instance
@@ -1168,13 +1168,15 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				f'{variant.type}. Got {T} instead.'
 			)
 
-		clauses = (
-			Clause(
-				f'{variant.field_id}',
-				size=get_discriminator_size(len(Enum_type.fields))
-			),
-			*clauses,
-		)
+		discriminator_size = get_discriminator_size(len(Enum_type.fields))
+		if discriminator_size:
+			clauses = (
+				Clause(
+					f'{variant.field_id}',
+					size=get_discriminator_size(len(Enum_type.fields))
+				),
+				*clauses,
+			)
 
 		output('; Enum clauses:', clauses)
 
@@ -1345,11 +1347,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		base_reg = 'rsp'
 
 		T = var.type
-		print(f'Getting a field of {root!r} {T}')
+		# print(f'Getting a field of {root!r} {T}')
 		for field in chain:
 
 			field = field.strip()
-			print(f'  {field = }')
+			# print(f'  {field = }')
 			if T is not STR_TYPE and T.deref is not None:
 				# We want to dereference T, so we first put it into a register
 				size = Type.get_size(T)  # always equal to PTR_SIZE
@@ -1365,7 +1367,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			var = T.fields[field]
 
-			print(f'  {T = } {T.is_enum = }')
+			# print(f'  {T = } {T.is_enum = }')
 			if T.is_enum:
 				discriminator_size = get_discriminator_size(len(T.fields))
 
@@ -1384,7 +1386,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				T = var.type
 
 				offset += var.offset
-			print(f'  offset: {offset} ({var.offset = })')
+			# print(f'  offset: {offset} ({var.offset = })')
 
 		base_addr = f'{base_reg} + {offset}'
 		if addr is Address_modes.ADDRESS:
@@ -2240,6 +2242,7 @@ def split_size(size) -> tuple[int, ...]:
 	return sizes
 
 def get_discriminator_size(n_variants):
+	if n_variants == 0: return 0
 	return ((n_variants-1).bit_length()-1) // 8 + 1
 
 # Strongly typed
@@ -2309,8 +2312,11 @@ core_module.children |= std_module.children
 main_dir = os.path.dirname(os.path.abspath(argv[1]))
 os.chdir(main_dir)
 
+print()
+
 Shared.infile = arg_infile
 main_module = Type.read_module('_main', in_module=False)
+print()
 
 if 'main' not in main_module.methods:
 	err("No definition of function 'main' found.")
@@ -2353,11 +2359,12 @@ while fn_queue:
 	variables = curr_mod.consts | fn_instance.arg_vars
 	local_variables = {*fn_instance.arg_vars}
 
-	print('Function:', fn.name, fn_instance.type_mappings)
-	print('Module:', curr_mod)
-	print('Variables:', variables)
-	print('Constants:', curr_mod.consts)
-	print('Types:', fn_types)
+	# print('Instantiating new concrete function:')
+	print('Instantiating', fn.name, 'with', fn_instance.type_mappings, 'as', fn_instance.mangle())
+	# print('Module:', curr_mod)
+	# print('Variables:', variables)
+	# print('Constants:', curr_mod.consts)
+	# print('Types:', fn_types)
 
 	scope_level = 1
 
@@ -2736,7 +2743,7 @@ while fn_queue:
 		output('pop rbp')
 		output('ret')
 
-	print()
+	# print()
 
 output(r'''
 segment .data

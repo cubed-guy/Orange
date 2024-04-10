@@ -1,0 +1,40 @@
+type Color
+	let r char
+	let g char
+	let b char
+	let a char
+end
+
+type Colour
+	let colour Color
+end
+
+type SDL_Palette
+	let ncolors int
+	let colors &Colour
+	let version int
+	let refcount int
+end
+
+type Format
+	let format Uint32
+	let palette &SDL_Palette
+	let BitsPerPixel char
+	let BytesPerPixel char
+	let _padding0 char
+	let _padding1 char
+	let Rmask int
+	let Gmask int
+	let Bmask int
+	let Amask int
+	let Rloss char
+	let Gloss char
+	let Bloss char
+	let Aloss char
+	let Rshift char
+	let Gshift char
+	let Bshift char
+	let Ashift char
+	let refcount int
+	let next &SDL_PixelFormat
+end
