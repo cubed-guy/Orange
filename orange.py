@@ -763,9 +763,10 @@ class Type:
 
 		return instance
 
-	def match_pattern(self, type_str, types) -> dict['type_arg': 'Type']:
+	def match_pattern(self, type_str, module) -> dict['type_arg': 'Type']:
 		type_queue = [self]
 		out_mappings = {}
+		types = module.children
 		# print('Matching Pattern', self, type_str)
 
 		for token in type_str.split():
@@ -825,8 +826,12 @@ class Type:
 
 				if evaluated_type not in (ANY_TYPE, expected_type.parent):
 					# err(f'{expected_type} did not match {token!r} in {type_str!r}')
-					err(f'Pattern match of {expected_type} failed for '
-						f'{type_str!r} at {token!r}')
+					if token == type_str:
+						err(f'{expected_type} did not match token {token!r}. '
+							f'Expected {evaluated_type!r}.')
+					else:
+						err(f'{expected_type} did not match token {token!r} in '
+							f'{type_str!r}. Expected {evaluated_type!r}.')
 				else:
 					type_queue.extend(expected_type.args)
 
@@ -2018,9 +2023,14 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
 
 		if arg_type is not UNSPECIFIED_TYPE:
-			curr_mappings = arg_type.match_pattern(type_str, types)
+			curr_mappings = arg_type.match_pattern(
+				type_str, fn_header.module
+			)
 		else:
-			parse_type_result = parse_type(type_str, types, variables=variables)
+			parse_type_result = parse_type(
+				type_str, fn_header.module.children, variables=variables
+			)
+
 			if isinstance(parse_type_result, ParseTypeError):
 				# print('NOT MAPPED, UNSPECIFIED')
 

@@ -832,14 +832,29 @@ end
 import SDL "SDL/SDL.or"
 
 fn sdl_tests
-	if SDL.SDL_Init(SDL::INIT_VIDEO)
+	let w int
+	let h int
+	w = 1280
+	h =  720
+
+	if SDL.SDL_Init(SDL.InitFlags.from{SDL.InitFlags::VIDEO})
 		println("Could not initialise SDL")
 		return
 	end
 
 	println("SDL Initialised succesfully!")
 
-	println(SDL::INIT_VIDEO)
+	println(SDL.InitFlags::VIDEO)
+
+	let window &SDL.video.Window
+
+	// Our calling convention doesn't supports only upto 4 arguments on Windows.
+	// window = SDL.SDL_CreateSDLWindow("SDL!", SDL.video.Window::POS_UNDEFINED, SDL.video.Window::POS_UNDEFINED, w, h, SDL.Window::SHOWN)
+	// if window == 0
+	// 	println("Could not initialise sdl window")
+	// 	return
+	// end
+
 end
 
 fn main
