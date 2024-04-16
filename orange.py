@@ -2087,14 +2087,16 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 
 	# print(f'{fn_header.ret_type = }')
 
-	ret_type_list = parse_type(fn_header.ret_type, types | type_mappings,
-		variables = variables)
-	if ret_type_list is None:
-		# TODO: better message
-		err(f'No such type {fn_header.ret_type}')
-	elif len(ret_type_list) != 1:
+	parse_type_result = parse_type(
+		fn_header.ret_type,
+		fn_header.module.children | type_mappings,
+		variables = variables,
+	)
+	if isinstance(parse_type_result, ParseTypeError):
+		err(f'In {fn_header.ret_type!r}, {parse_type_result}')
+	if len(parse_type_result) != 1:
 		err('Return type string does not evaluate to a single type')
-	ret_type, = ret_type_list
+	ret_type, = parse_type_result
 
 	return ret_type
 
@@ -2482,10 +2484,6 @@ while fn_queue:
 			reg_str)
 
 	ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
-
-	Shared.infile.seek(fn.tell)
-	first_line = Shared.infile.readline()
-	second_line = Shared.infile.readline()
 
 	Shared.infile.seek(fn.tell)
 	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
