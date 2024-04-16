@@ -37,8 +37,19 @@ enum Window
 	const SHOWN 4
 end
 
+type WindowParams
+	let title str
+	let x int
+	let y int
+	let w int
+	let h int
+	let flags WindowFlags
+end
+
 extern SDL_CreateWindow: str title, int x, int y, int w, int h, WindowFlags flags -> &Window
 
 extern SDL_GetWindowSurface: &Window window -> &surface.Surface
 
 extern SDL_DestroyWindow: &Window window
+
+extern SDL_CreateWindowFromStruct: &WindowParams args -> &Window

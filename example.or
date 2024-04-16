@@ -849,36 +849,55 @@ fn sdl_tests
 	let window &SDL.video.Window
 
 	// Our calling convention doesn't supports only upto 4 arguments on Windows.
-	// window = SDL.SDL_CreateSDLWindow("SDL!", SDL.video.Window::POS_UNDEFINED, SDL.video.Window::POS_UNDEFINED, w, h, SDL.Window::SHOWN)
+	// window = SDL.SDL_CreateWindow("SDL!", SDL.video.Window::POS_UNDEFINED, SDL.video.Window::POS_UNDEFINED, w, h, SDL.Window::SHOWN)
+	let window_params SDL.video.WindowParams
+
+	window_params.title = "SDL!"
+	window_params.x = SDL.video.Window::POS_UNDEFINED
+	window_params.y = SDL.video.Window::POS_UNDEFINED
+	window_params.w = w
+	window_params.h = h
+	window_params.flags = SDL.video.WindowFlags.from{SDL.video.Window::SHOWN}
+
+	println("STARTING WINDOW")
+	// return
+	window = SDL.video.SDL_CreateWindowFromStruct(&window_params)
 	// if window == 0
 	// 	println("Could not initialise sdl window")
 	// 	return
 	// end
 
+	let m int
+	m = 150000
+	while m
+		println(m)
+		m = m-1
+	end
+
 end
 
 fn main
-	// basics()
-	// operations()
-	// control_flow()
-	// pointers()
-	// alloc_stuff()
-	// linked_lists()
-	// polymorphic_structs()
-	// classmethods()
-	// array_index()
-	// // dictionaries()
-	// streq_tests()
-	// mul_tests()
-	// more_meta()
-	// // scanf_test()
-	// passing_args()
-	// nested_types()
-	// imports()
-	// generic_prints()
-	// constants()
-	// big_moves()
-	// enums()
+	basics()
+	operations()
+	control_flow()
+	pointers()
+	alloc_stuff()
+	linked_lists()
+	polymorphic_structs()
+	classmethods()
+	array_index()
+	// dictionaries()
+	streq_tests()
+	mul_tests()
+	more_meta()
+	// scanf_test()
+	passing_args()
+	nested_types()
+	imports()
+	generic_prints()
+	constants()
+	big_moves()
+	enums()
 	sdl_tests()
 
 	println("HI")
