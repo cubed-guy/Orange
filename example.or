@@ -283,7 +283,7 @@ fn linked_lists
 
 	tail = alloc(Int_node)
 	tail.data = 5
-	tail.next = 0  // unspecified type can go anywhere rn, maybe I should add Null?
+	tail.next = head  // TODO: Figure out NULL, probably Option &Node T
 
 	println(tail.data)
 
@@ -292,7 +292,7 @@ fn linked_lists
 	tail.next = alloc(Int_node)
 	tail = tail.next
 	tail.data = 4
-	tail.next = 0
+	tail.next = head  // TODO: Figure out NULL, probably Option &Node T
 
 	println(head)
 	println(head.next)
@@ -306,7 +306,7 @@ fn linked_lists
 		tail.data = i
 		i = i + 1
 	end
-	tail.next = 0
+	tail.next = head  // TODO: Figure out NULL, probably Option &Node T
 
 	let node &Int_node
 	node = head
@@ -409,7 +409,7 @@ fn classmethods
 
 	node.data = 22
 	node.next = alloc(Node int)
-	node = 0
+	// node = 0
 
 	let a int
 	a = Node int.nth(head, 2)
@@ -455,7 +455,7 @@ fn array_index
 
 	node.data = 72
 	node.next = alloc(Node int)
-	node = 0
+	// node = 0
 
 	let x int
 	x = head[2]
@@ -735,7 +735,7 @@ end
 
 fn big_returner T: T val -> Node T
 	let node Node T
-	node.next = 0
+	node.next = &node  // TODO: Figure out NULL, probably Option &Node T
 	node.data = val
 	return node
 end
@@ -750,7 +750,7 @@ fn big_moves
 	let y Node int
 
 	y.data = 5
-	y.next = 0
+	y.next = &y  // TODO: Figure out NULL, probably Option &Node T
 
 	x = y
 
@@ -829,7 +829,7 @@ fn enums
 	end
 end
 
-import SDL "SDL/SDL.or"
+// import SDL "SDL/SDL.or"
 
 fn sdl_tests
 	let w int
@@ -898,7 +898,7 @@ fn main
 	constants()
 	big_moves()
 	enums()
-	sdl_tests()
+	// sdl_tests()
 
 	println("HI")
 

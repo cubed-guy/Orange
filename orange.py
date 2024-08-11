@@ -18,10 +18,10 @@
 # DONE: big moves
 # DONE: enums
 # DONE: import extern
-# TODO: SDL bindings
-# TODO: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
-# TODO: check non-void return
+# DONE: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
 # TODO: enum consts
+# TODO: SDL bindings
+# TODO: check non-void return
 # TODO: more unaries
 # TODO: big args
 # TODO: stack arguments
@@ -266,8 +266,9 @@ class Clause:
 	def __repr__(self):
 		return f'{self.__class__.__name__}({self.asm_str}, size={self.size})'
 
-UNSPECIFIED_TYPE = type('UNSPECIFIED_TYPE', (), {
-	'__repr__': lambda s: f'Type<UNSPECIFIED>', 'deref': None
+UNSPECIFIED_INT = type('UNSPECIFIED_INT', (), {
+	'__repr__': lambda s: f'Type<UNSPECIFIED_INT>',
+	'is_int': lambda s: True, 'deref': None,
 })()
 FLAG_TYPE = type('FLAG_TYPE', (), {
 	'__repr__': lambda s: f'Type<FLAG>'
@@ -299,7 +300,7 @@ class Type:
 
 	@classmethod
 	def get_size(cls, T, *, unspecified = 8):
-		if T is UNSPECIFIED_TYPE:
+		if T is UNSPECIFIED_INT:
 			return unspecified
 		if not isinstance(T, cls):
 			err(f'[Internal Error] Invalid type {T.__class__} for type')
@@ -369,7 +370,7 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				print('NEW ENUM', curr_type)
+				# print('NEW ENUM', curr_type)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -407,7 +408,7 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				print('NEW TYPE', curr_type)
+				# print('NEW TYPE', curr_type)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -520,7 +521,7 @@ class Type:
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 					ret_type, out_mod, tell, Shared.line_no, Shared.infile
 				)
-				print(f'FUNCTION {name}')
+				# print(f'FUNCTION {name}')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -627,7 +628,7 @@ class Type:
 					# print(f'Declared a constant {name!r} associated to {curr_type}')
 					const_var = eval_const(exp, curr_type_dict,
 						variables=curr_type.consts)
-					# const_var.name = name
+					const_var.name = name
 					curr_type.consts[name] = const_var
 					# print(f'Constants in {curr_type}: {curr_type.consts}')
 
@@ -646,9 +647,9 @@ class Type:
 						for field in curr_type.fields.values():
 							field.offset += discriminator_size
 
-						print('END ENUM', curr_type)
-					else:
-						print('END TYPE', curr_type)
+					# 	print('END ENUM', curr_type)
+					# else:
+					# 	print('END TYPE', curr_type)
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = out_mod
@@ -792,48 +793,46 @@ class Type:
 			# What to do for T.child_type if T is polymorphic?
 			# it can be the same type, but have different parents
 			# eg multiple files import the same module
-			token, *children = token.split('.')
+			qual_token = token
+			token, *children = qual_token.split('.')
 
-			if token not in types:
-				# token is a polymorphic type
-				if children:
-					# TODO: suppress error if a mapping is already made
-					err('Cannot use children of a polymorphic type')
+			if token in types: # token is a concrete type
 
-				if token not in out_mappings:
-					# print(f'MATCH {token!r} to {expected_type}')
-					out_mappings[token] = expected_type
-				elif out_mappings[token] is UNSPECIFIED_TYPE:
-					# print(f'MATCH {token!r} to {expected_type}')
-					out_mappings[token] = expected_type
-				elif expected_type is ANY_TYPE:
-					# print(f'MATCH {token!r} to {expected_type}')
-					out_mappings[token] = expected_type
-
-				elif out_mappings[token] is not expected_type:
-					err('Multiple mappings to same argument. '
-						f'Trying to map {token!r} to '
-						f'{expected_type} and {out_mappings[token]}')
-			else:
-				# token is a concrete type
-				# print(f'MATCH {token!r} to {expected_type}')
-				evaluated_type = types[token]
+				evaluated_token = types[token]
 				for child in children:
-					if child not in evaluated_type.children:
-						err(f'{child!r} is not defined in {evaluated_type!r}')
+					if child not in evaluated_token.children:
+						err(f'{child!r} is not defined in {evaluated_token!r}')
 
-					evaluated_type = evaluated_type.children[child]
+					evaluated_token = evaluated_token.children[child]
 
-				if evaluated_type not in (ANY_TYPE, expected_type.parent):
-					# err(f'{expected_type} did not match {token!r} in {type_str!r}')
-					if token == type_str:
-						err(f'{expected_type} did not match token {token!r}. '
-							f'Expected {evaluated_type!r}.')
-					else:
-						err(f'{expected_type} did not match token {token!r} in '
-							f'{type_str!r}. Expected {evaluated_type!r}.')
-				else:
-					type_queue.extend(expected_type.args)
+				# expected_type.parent is the polymorphic type
+				if evaluated_token not in (ANY_TYPE, expected_type.parent):
+					err(f'{qual_token!r} evaluated to {evaluated_token}, '
+						f'but the argument expected {expected_type}.')
+
+				type_queue.extend(expected_type.args)
+
+			# token is a polymorphic type
+			elif children:
+				# TODO: suppress error if a mapping is already made
+				err('Children of polymorphic types are not yet supported')
+
+			elif token not in out_mappings:
+				# print(f'MATCH {token!r} to {expected_type}')
+				out_mappings[token] = expected_type
+			elif out_mappings[token] is UNSPECIFIED_INT:
+				# print(f'MATCH {token!r} to {expected_type}')
+				if not expected_type.is_int():
+					err(f'Expected an integer type for {token!r}')
+				out_mappings[token] = expected_type
+			elif expected_type is ANY_TYPE:
+				# print(f'MATCH {token!r} to {expected_type}')
+				out_mappings[token] = expected_type
+
+			elif out_mappings[token] is not expected_type:
+				err('Multiple mappings to same argument. '
+					f'Trying to map {token!r} to '
+					f'{expected_type} and {out_mappings[token]}')
 
 		return out_mappings
 
@@ -851,6 +850,9 @@ class Type:
 
 		# print(self.ref, 'has a deref of', self)
 		return self.ref
+
+	def is_int(self):
+		return self in (INT_TYPE, CHAR_TYPE, U64_TYPE)
 
 class Branch(Enum):
 	ELSE = object()
@@ -1008,7 +1010,7 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 			err('Unsupported metadata field. '
 				f"':{field}' does not yield a type.")
 		T = exp_type
-		if T is UNSPECIFIED_TYPE:
+		if T is UNSPECIFIED_INT:
 			T = INT_TYPE
 		elif isinstance(T, Flag):
 			err('Using booleans is supported only in conditionals')
@@ -1047,27 +1049,6 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 
 	args[:args_len] = instance,
 	return args
-
-	'''
-	if T in args:  # If args too big then you're doing something wrong. I can't be bothered to have a hashed copy
-		if pointer:
-			T = '&' + T
-	else:
-		T = types[T]
-		if pointer:
-			T = T.pointer()
-
-	if T is curr_type:
-		err(f'Recursive declaration. ({T} within {T})')
-
-	if T is ANY_TYPE:
-		err("A variable of type 'any' must be a pointer")
-	'''
-
-	err('Types cannot be parsed')
-	return [UNSPECIFIED_TYPE]
-
-	match = None
 
 def parse_string(token) -> bytes:
 	if token[0] != '"': err('Strings can only start with \'"\'')
@@ -1167,11 +1148,12 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		variant = Enum_type.fields[variant_name]
 
 		# type checking
-		if T not in (variant.type, UNSPECIFIED_TYPE):
-			err(
-				f'Variant {variant_name!r} of {Enum_type} expects '
-				f'{variant.type}. Got {T} instead.'
-			)
+		if T is not variant.type:
+			if not (T is UNSPECIFIED_INT and variant.type.is_int()):
+				err(
+					f'Variant {variant_name!r} of {Enum_type} expects '
+					f'{variant.type}. Got {T} instead.'
+				)
 
 		discriminator_size = get_discriminator_size(len(Enum_type.fields))
 		if discriminator_size:
@@ -1186,12 +1168,6 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		output('; Enum clauses:', clauses)
 
 		return insts, clauses, Enum_type
-
-	clauses = ()
-	val = None
-	var = None
-	T   = UNSPECIFIED_TYPE
-	insts = []
 
 	for operator in ('<=', '>=', '<<', '>>', '==', '!=', '->', *'<>|^&+-*/%'):  # big ones first
 		operator_idx = Patterns.find_through_strings(token, operator)
@@ -1225,6 +1201,12 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		token = token[1:].lstrip()
 	else:
 		addr = Address_modes.NONE
+
+	clauses = ()
+	val = None
+	var = None
+	T   = None
+	insts = []
 
 	colon_idx = Patterns.rfind_through_strings(token, ':')
 	dot_idx = Patterns.find_through_strings(token, '.')
@@ -1263,7 +1245,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				T, = parse_type_result
 				val = T.size
 			# print(f'{T}:size = {val}')
-			T = UNSPECIFIED_TYPE
+			T = UNSPECIFIED_INT
 		elif field == 'type':
 			_insts, _clauses, exp_type = parse_token(exp, types,
 				variables=variables, virtual=True)
@@ -1414,10 +1396,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 	elif token.isdigit():
 		if addr is Address_modes.ADDRESS:
-			err("Can't take address of a integer literal")
+			err("Can't take address of an integer literal")
 		if addr is Address_modes.DEREF:
-			err("Can't dereference a integer literal")
+			err("Can't dereference an integer literal")
 		val = int(token)
+		T = UNSPECIFIED_INT
 
 	elif token.startswith("'"):
 		if addr is Address_modes.ADDRESS:
@@ -1460,10 +1443,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	else:
 		err(f'Invalid token syntax {token!r}')
 
+	if T is None:
+		err(f'[INTERNAL ERROR] Type of token {token!r} not determined.')
 
 	if val is not None:
 		clauses = (Clause(f'{val}'),)
-
 
 	if addr is Address_modes.DEREF:
 		if T.deref in (None, ANY_TYPE):
@@ -1533,26 +1517,18 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	return insts, clauses, T
 
 def eval_const(exp, types, *, variables) -> Const:
-	# (instructions to get the value of token, expression, type)
-
-	# print('Eval expression', repr(token))
-
-	clauses = ()
-	val = None
-	T   = UNSPECIFIED_TYPE
-	r_operand = None
-
 	# don't support enum{} yet
 
 	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>|^&+-*/%'):  # big ones first
 		operator_idx = Patterns.find_through_strings(exp, operator)
 		if operator_idx != -1:
+			err(f'Operators in constants are not yet supported')
+
 			l_operand = exp[:operator_idx].strip()
 			r_operand = exp[operator_idx+len(operator):].strip()
 
 			# print(f'  {l_operand!r} {operator} {r_operand!r}')
 			if not l_operand:
-				# err('[Internal error] Unary not checked earlier')
 				r_operand = None
 				continue
 
@@ -1565,9 +1541,14 @@ def eval_const(exp, types, *, variables) -> Const:
 		addr = Address_modes.ADDRESS
 		exp = exp[1:].lstrip()
 	elif exp.startswith('*'):
-		err("Can't save a dereferenced value as a constance")
+		err("Can't save a dereferenced value as a constant")
 	else:
 		addr = Address_modes.NONE
+
+	clauses = ()
+	val = None
+	r_operand = None
+	T = None
 
 	colon_idx = Patterns.rfind_through_strings(exp, ':')
 	dot_idx = Patterns.find_through_strings(exp, '.')
@@ -1606,7 +1587,7 @@ def eval_const(exp, types, *, variables) -> Const:
 				T, = parse_type_result
 				val = T.size
 			# print(f'{T}:size = {val}')
-			T = UNSPECIFIED_TYPE
+			T = UNSPECIFIED_INT
 		elif field == 'type':
 			_insts, _clauses, exp_type = parse_token(exp, types,
 				variables=variables, virtual=True)
@@ -1648,21 +1629,22 @@ def eval_const(exp, types, *, variables) -> Const:
 
 		if addr is Address_modes.ADDRESS:
 			err('Reference constants are not yet supported')
-		elif isinstance(var, Const):
-			T = var.type
-			val = var.value
-		else:
+		if not isinstance(var, Const):
 			err('Cannot define a constant using a variable')
+
+		T = var.type
+		val = var.value
 
 	elif dot_idx != -1:
 		err('Constant fields are not yet supported')
 
 	elif exp.isdigit():
 		if addr is Address_modes.ADDRESS:
-			err("Can't take address of a integer literal")
+			err("Can't take address of an integer literal")
 		if addr is Address_modes.DEREF:
-			err("Can't dereference a integer literal")
+			err("Can't dereference an integer literal")
 		val = int(exp)
+		T = UNSPECIFIED_INT
 
 	elif exp.startswith("'"):
 		if addr is Address_modes.ADDRESS:
@@ -1705,6 +1687,9 @@ def eval_const(exp, types, *, variables) -> Const:
 	else:
 		err(f'Invalid token syntax {exp!r}')
 
+	if T is None:
+		err(f'[INTERNAL ERROR] Type of token {exp!r} not determined.')
+
 	if val is None:
 		err('[Internal Error] Got no val while evaluating a constant')
 
@@ -1714,8 +1699,10 @@ def eval_const(exp, types, *, variables) -> Const:
 	l_operand = Const('_l', val, T, Shared.line_no)
 
 	if r_operand is not None:
-		T, val = eval_operator_const(l_operand, operator, r_operand)
-		return Const('_val', val, T, Shared.line_no)
+		err(f'Operators in constants are not yet supported')
+		# TODO: define constant operator
+		# T, val = eval_operator_const(l_operand, operator, r_operand)
+		# return Const('_val', val, T, Shared.line_no)
 
 	return l_operand
 
@@ -1765,12 +1752,11 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 						f'{dest_reg.encode(size=8)}'
 					)
 
-				return UNSPECIFIED_TYPE
+				return UNSPECIFIED_INT
 
-			T = UNSPECIFIED_TYPE
+			T = UNSPECIFIED_INT
 
 		size = Type.get_size(T)
-
 
 		# [x] T val, dest_reg val -> mov
 		if dest_regs is not Flag:
@@ -1821,7 +1807,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 					)
 				)
 
-			if T is UNSPECIFIED_TYPE and exp_clause.asm_str.isdigit():
+			if T is UNSPECIFIED_INT and exp_clause.asm_str.isdigit():
 				val = int(exp_clause.asm_str)
 				if val: return Flag.ALWAYS
 				else: return Flag.NEVER
@@ -1966,7 +1952,7 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 		arg_types.append(T)
 
 	if fn_qualname == 'alloc' and not arg_types:
-		arg_types.append(UNSPECIFIED_TYPE)
+		arg_types.append(UNSPECIFIED_INT)
 		output(f'mov {arg_reg:8}, {alloc_fac}')
 
 	caller_type_name, dot, fn_name = fn_qualname.rpartition('.')
@@ -2022,7 +2008,7 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 	# print('TYPE MAPPING USING', fn_header.args, 'AND', arg_types)
 	for i, ((type_str, arg_name), arg_type) in enumerate(zip(fn_header.args, arg_types), 1):
 
-		if arg_type is not UNSPECIFIED_TYPE:
+		if arg_type is not UNSPECIFIED_INT:
 			curr_mappings = arg_type.match_pattern(
 				type_str, fn_header.module
 			)
@@ -2032,34 +2018,57 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 			)
 
 			if isinstance(parse_type_result, ParseTypeError):
-				# print('NOT MAPPED, UNSPECIFIED')
+				# Trying to match against a polymorphic type
 
-				# don't update mappings
-				if len(type_str.split(maxsplit=1)) > 1: continue
-				# We have to expect UNSPECIFIED_TYPE in the for loop
-				curr_mappings = {type_str.lstrip(): UNSPECIFIED_TYPE}
+				if len(type_str.split(maxsplit=1)) > 1:
+					err('Integer literal cannot be matched to type '
+						f'{type_str.lstrip()!r}')
+
+				curr_mappings = {type_str.lstrip(): UNSPECIFIED_INT}
 			else:
+				# concrete type, no mappings
+				T, = parse_type_result
+				if not T.is_int():
+					err(f'Provided an integer as argument, but expected {T}')
 				# print('MAPPED, UNSPECIFIED')
-				continue  # parse_type is not None, so it won't change
+				continue
 
-		for type_arg, matched_type in curr_mappings.items():
+		for type_arg, proposed_mapping in curr_mappings.items():
 			if type_arg not in type_mappings:
-				# print(f'{type_mappings = }')
 				err(f'{type_arg!r} in {type_str} is neither '
 					'an existing type nor a type argument')
-			elif type_mappings[type_arg] in (UNSPECIFIED_TYPE, None):
-				type_mappings[type_arg] = matched_type
-			elif matched_type is ANY_TYPE:
-				type_mappings[type_arg] = matched_type
-			elif matched_type not in (type_mappings[type_arg], UNSPECIFIED_TYPE):
-				err('Multiple mappings to same argument. '
-					f'Trying to map {type_arg!r} to '
-					f'{matched_type} and {type_mappings[type_arg]} '
-					f'{arg_types}')
 
-	# Handles UNSPECIFIED_TYPE
+			existing_mapping = type_mappings[type_arg]
+
+			if existing_mapping is None:
+				type_mappings[type_arg] = proposed_mapping
+				continue
+			if existing_mapping is ANY_TYPE: continue
+			if proposed_mapping is ANY_TYPE:
+				type_mappings[type_arg] = proposed_mapping
+				continue
+
+			# Assign a more specific int type
+			if existing_mapping is UNSPECIFIED_INT:
+				if proposed_mapping.is_int():
+					type_mappings[type_arg] = proposed_mapping
+					continue
+
+			# Don't do anything if specific already exists
+			elif proposed_mapping is UNSPECIFIED_INT:
+				if existing_mapping.is_int(): continue
+
+			elif proposed_mapping is existing_mapping: continue
+
+			# Type matching failed
+			err('Multiple mappings to same type argument. '
+				f'Trying to map {type_arg!r} to '
+				f'{proposed_mapping} and {existing_mapping} '
+				f'{arg_types}')
+
+	# Handles UNSPECIFIED_INT
 	for typename, subbed_type in type_mappings.items():
-		if subbed_type is UNSPECIFIED_TYPE:
+		if subbed_type is UNSPECIFIED_INT:
 			type_mappings[typename] = INT_TYPE
 
 	try:
@@ -2168,73 +2177,57 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	return [f'{inst} {{dest_reg:{operand_clause.size}}}, {operand_clause.asm_str}']
 
 def operator_result_type(operator, l_type, r_type) -> Type:
-	# str  + int
-	# str  + char
-	# int  + int
-	# int  + char
-	# char + char
+	if operator == '-':
+		# ptr - ptr, ptr - int, int - int
+		if l_type.deref is not None:
+			if r_type.is_int(): return l_type
+			if r_type.deref is not None: return UNSPECIFIED_INT
+			err(f'Cannot subtract {r_type} from a pointer')
 
-	# str  - int
-	# str  - char
-	# int  - int
-	# int  - char
-	# char - char
-	if types['void'] in [l_type, r_type]:
-		err(f'Unsupported operator {operator!r} between '
-			f'{l_type} and {r_type}')
-
-	if STR_TYPE in [l_type, r_type]:
-		if r_type is l_type or UNSPECIFIED_TYPE in [l_type, r_type]:
-			if operator == '==': return Flag.e
-			if operator == '!=': return Flag.ne
-
-		if r_type is l_type or operator not in ('+', '-'):
-			err(f'Unsupported operator {operator!r} between '
-				f'{l_type} and {r_type}')
-		return STR_TYPE
-
-	if operator in '+-':
-		if l_type.deref is not None and r_type.deref is None:
-			if r_type not in (U64_TYPE, INT_TYPE, UNSPECIFIED_TYPE):
-				err(f'Cannot offset a pointer using {r_type}')
+		if l_type.is_int() and r_type.is_int():
+			if l_type is not r_type: return UNSPECIFIED_INT
 			return l_type
 
-	if operator == '+':
-		if r_type.deref is not None and l_type.deref is None:
-			if l_type not in (U64_TYPE, INT_TYPE, UNSPECIFIED_TYPE):
-				err(f'Cannot offset a pointer using {l_type}')
-			return r_type
+		err(f'Cannot subtract between {l_type} and {r_type}')
 
-		if None not in (l_type.deref, r_type.deref):
-			err('Cannot add pointers')
+	if operator in ('+', '-'):
+		# ptr + int, int + ptr, int + int
+		if l_type.is_int():
+			i_type = l_type
+			o_type = r_type
+		elif r_type.is_int():
+			i_type = r_type
+			o_type = l_type
+		else:
+			err(f'Cannot add {l_type} and {r_type}')
 
-	# account for custom types
+		if o_type.deref is not None:
+			return o_type
+
+		if not o_type.is_int():
+			err(f'Cannot add {l_type} and {r_type}')
+
+		if l_type is not r_type: return UNSPECIFIED_INT
+		return l_type
+
 	if operator == '==': return Flag.e
 	if operator == '!=': return Flag.ne
 
-	if l_type not in builtin_type_set:
-		err(f'Cannot use operator {operator!r} on custom type {l_type}')
-	if r_type not in builtin_type_set:
-		err(f'Cannot use operator {operator!r} on custom type {r_type}')
+	if l_type != r_type:
+		if not (l_type.is_int() and r_type.is_int()):
+			err(f'Unsupported operator {operator!r} '
+				f'between {l_type} and {r_type}')
 
 	if operator == '>':  return Flag.g
 	if operator == '<':  return Flag.l
 	if operator == '>=': return Flag.ge
 	if operator == '<=': return Flag.le
 
-	if UNSPECIFIED_TYPE in (l_type, r_type):
-		return UNSPECIFIED_TYPE
+	if l_type.is_int() and r_type.is_int():
+		if r_type is not l_type: return UNSPECIFIED_INT
+		return l_type
 
-	if l_type is not r_type:
-		return UNSPECIFIED_TYPE
-
-	if U64_TYPE in (l_type, r_type):
-		return U64_TYPE
-
-	if INT_TYPE in (l_type, r_type):
-		return INT_TYPE
-
-	return CHAR_TYPE
+	err(f'Unsupported operator {operator!r} between {l_type} and {r_type}')
 
 def get_string_label(string, strings):
 	if string in strings: return strings[string]
@@ -2294,7 +2287,7 @@ ANY_TYPE = builtin_types['any']
 
 U64_TYPE = builtin_types['u64']
 U64_TYPE.size = 8
-# print('FORCE SET SIZE = 0 [U64]')
+# print('FORCE SET SIZE = 8 [U64]')
 
 VOID_TYPE = builtin_types['void']
 VOID_TYPE.size = 0
@@ -2313,7 +2306,7 @@ STR_TYPE.deref = CHAR_TYPE
 
 # print('STR_TYPE size =', STR_TYPE.size)
 
-builtin_type_set = {*builtin_types.values(), UNSPECIFIED_TYPE, FLAG_TYPE}
+builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
 
 Shared.infile = std_file
 std_module = Type.read_module('_std', in_module=False)
@@ -2372,7 +2365,7 @@ while fn_queue:
 	local_variables = {*fn_instance.arg_vars}
 
 	# print('Instantiating new concrete function:')
-	print('Instantiating', fn.name, 'with', fn_instance.type_mappings, 'as', fn_instance.mangle())
+	# print('Instantiating', fn.name, 'with', fn_instance.type_mappings, 'as', fn_instance.mangle())
 	# print('Module:', curr_mod)
 	# print('Variables:', variables)
 	# print('Constants:', curr_mod.consts)
@@ -2509,7 +2502,7 @@ while fn_queue:
 				ret_type = types['void']
 			else:
 				# We don't use the expected size
-				# for the case of returning UNSPECIFIED_TYPE
+				# for the case of returning UNSPECIFIED_INT
 				ret_type = parse_exp(match[2].strip(),
 					dest_regs = dest_regs, fn_queue = fn_queue,
 					variables = variables)
@@ -2524,7 +2517,12 @@ while fn_queue:
 				err('Return type must be exactly one type')
 			expected_ret_type, = fn_type_list
 
-			if ret_type not in (expected_ret_type, UNSPECIFIED_TYPE):
+			if ret_type is UNSPECIFIED_INT:
+				if not expected_ret_type.is_int():
+					err('Mismatched type. '
+						f'{fn.name} expects {fn_types[fn.ret_type]}. '
+						f'Trying to return {ret_type}')
+			elif ret_type is not expected_ret_type:
 				err('Mismatched type. '
 					f'{fn.name} expects {fn_types[fn.ret_type]}. '
 					f'Trying to return {ret_type}')
@@ -2673,7 +2671,7 @@ while fn_queue:
 					dest_token, fn_types, variables = variables
 				)
 
-				if dest_type is UNSPECIFIED_TYPE or not dest_clauses:
+				if dest_type is UNSPECIFIED_INT or not dest_clauses:
 					err(f'Cannot assign to {dest}')
 
 				if index != -1:
@@ -2716,7 +2714,11 @@ while fn_queue:
 						err('_setitem() must return void')
 
 				else:
-					if ret_type not in (UNSPECIFIED_TYPE, dest_type):
+					if ret_type is UNSPECIFIED_INT:
+						if not dest_type.is_int():
+							err(f'Cannot assign an integer into '
+								f'variable {dest} of {dest_type}')
+					elif ret_type is not dest_type:
 						err(f'Cannot assign {ret_type} into '
 							f'variable {dest} of {dest_type}')
 
