@@ -7,6 +7,8 @@ end
 
 type Surface
 	let flags int               // < Read-only
+
+	let _pad1 int
 	let format &pixels.Format   // < Read-only
 	let w int                   // < Read-only
 	let h int                   // < Read-only

@@ -414,7 +414,7 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				# print('NEW TYPE', curr_type)
+				print('NEW TYPE', curr_type)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -627,9 +627,9 @@ class Type:
 
 					if not isinstance(parse_type_result, ParseTypeError):
 						T, = parse_type_result
-						# print('GOT REAL TYPE')
-					# else:
-						# print('GOT FAKE TYPE')
+						print('GOT REAL TYPE', T)
+					else:
+						print('GOT FAKE TYPE', T)
 
 					if curr_type.is_enum:
 						offset = 0
@@ -686,9 +686,9 @@ class Type:
 						for field in curr_type.fields.values():
 							field.offset += discriminator_size
 
-					# 	print('END ENUM', curr_type)
-					# else:
-					# 	print('END TYPE', curr_type)
+						print('END ENUM', curr_type)
+					else:
+						print('END TYPE', curr_type)
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = out_mod
@@ -2438,7 +2438,7 @@ while fn_queue:
 		match = Patterns.split_word.match(line)
 		if match[1] == 'let':
 			name, type_str = match[2].split(maxsplit=1)
-			# print('DECALRATION:', (name, type_str))
+			print('DECALRATION:', (name, type_str))
 
 			if name in local_variables:
 				var = variables[name]
@@ -2468,6 +2468,7 @@ while fn_queue:
 			if T is ANY_TYPE:
 				err("A variable of type 'any' must be a pointer")
 
+			print(f'{T} has a size of {T.size}')
 			offset += T.size
 			local_variables.add(name)
 			variables[name] = Variable(name, offset, T, Shared.line_no)

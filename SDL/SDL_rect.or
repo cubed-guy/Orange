@@ -1,2 +1,6 @@
 type Rect
+	let x int
+	let y int
+	let w int
+	let h int
 end

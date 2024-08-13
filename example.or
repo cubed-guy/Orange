@@ -878,13 +878,18 @@ fn sdl_tests
 	rect_null = rect_null - dummy_offset
 
 	let colour int
-	colour = 34
-	colour = colour << 8
-	colour = colour | 34
-	colour = colour << 8
-	colour = colour | 34
+	colour = SDL.pixels.SDL_MapRGB(display.format, 34, 34, 34)
 
 	SDL.surface.SDL_FillRect(display, rect_null, colour)
+
+	let new_rect SDL.rect.Rect
+	new_rect.x = 100
+	new_rect.y = 100
+	new_rect.w = 1080
+	new_rect.h = 520
+
+	colour = SDL.pixels.SDL_MapRGB(display.format, 255, 144, 136)
+	SDL.surface.SDL_FillRect(display, &new_rect, colour)
 
 	SDL.video.SDL_UpdateWindowSurface(window)
 

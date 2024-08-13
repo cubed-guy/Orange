@@ -2,3 +2,5 @@
 *.o
 *.exe
 *.sublime-*
+SDL/x86_64-w64-mingw32/*
+!SDL/x86_64-w64-mingw32/lib

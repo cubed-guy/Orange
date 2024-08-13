@@ -9,7 +9,7 @@ type Colour
 	let colour Color
 end
 
-type SDL_Palette
+type Palette
 	let ncolors int
 	let colors &Colour
 	let version int
@@ -17,8 +17,10 @@ type SDL_Palette
 end
 
 type Format
-	let format Uint32
-	let palette &SDL_Palette
+	let format int
+
+	let _pad1 int
+	let palette &Palette
 	let BitsPerPixel char
 	let BytesPerPixel char
 	let _padding0 char
@@ -36,7 +38,9 @@ type Format
 	let Bshift char
 	let Ashift char
 	let refcount int
-	let next &SDL_PixelFormat
+
+	let _pad2 int
+	let next &Format
 end
 
 extern SDL_MapRGB: &Format format, char r, char g, char b -> int
