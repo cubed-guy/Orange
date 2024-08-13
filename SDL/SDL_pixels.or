@@ -38,3 +38,5 @@ type Format
 	let refcount int
 	let next &SDL_PixelFormat
 end
+
+extern SDL_MapRGB: &Format format, char r, char g, char b -> int

@@ -19,8 +19,11 @@
 # DONE: enums
 # DONE: import extern
 # DONE: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
-# TODO: enum consts
+# DONE: exposed renaming support
+# TODO: hex and bin literals
 # TODO: SDL bindings
+# TODO: enum consts
+# TODO: const operations
 # TODO: check non-void return
 # TODO: more unaries
 # TODO: big args
@@ -44,7 +47,8 @@ class Shared:
 	arch = None
 	line = '[DEBUG] ** Empty line **'
 	line_no = 0
-	libraries = set()
+	library_set = set()
+	libraries = []
 	library_paths = set()
 	imports = {}
 
@@ -143,7 +147,6 @@ class ParseTypeError(ValueError):
 	pass
 
 output(r'''
-global main
 extern strcmp
 extern malloc
 extern exit
@@ -204,6 +207,7 @@ class Function_instance:
 		self.type_mappings = dict(zip(template.typeargs, typeargs))
 		self.arg_vars = {}
 		self.offset = 0
+		self.export_name = None
 
 	def init_args_vars(self, types):
 		local_types = types | self.type_mappings
@@ -226,6 +230,7 @@ class Function_instance:
 
 	def mangle(self):
 		if self.template.isextern: return self.template.name.rpartition('.')[2]
+		if self.export_name is not None: return self.export_name
 		return f'_{self.id}{self.template.name}'
 
 class Variable:  # Instantiated when types are known
@@ -313,7 +318,7 @@ class Type:
 		in_module=false means assume this as the root namespace... sort of
 		'''
 
-		global core_module
+		global core_module, fn_queue
 
 		# First pass, get the declarations
 
@@ -329,6 +334,7 @@ class Type:
 			out_mod.methods |= {'alloc': alloc_fn}
 		else:
 			out_mod.methods = core_module.methods.copy()
+			out_mod.consts = core_module.consts.copy()
 			out_mod.children = builtin_types.copy()
 
 			# print('Inherited core types:', out_mod.children)
@@ -427,6 +433,37 @@ class Type:
 				# if T is ANY_TYPE:
 				# 	err("A variable of type 'any' must be a pointer")
 
+			elif match[1] == 'export':
+				renamed, qual_fn = match[2].split(maxsplit=1)
+				print(f'{renamed = }, {qual_fn = }')
+
+				fn_split = qual_fn.split(maxsplit=1)
+				print(f'{fn_split = }')
+				if len(fn_split) == 2:
+					fn, type_str = fn_split
+				else:
+					fn, = fn_split
+					type_str = ''
+
+				if fn not in out_mod.methods:
+					err(f'Function {fn!r} is not defined in {out_mod}. '
+						'Cannot export.')
+
+				args = parse_type(type_str, out_mod.children, variables=out_mod.consts)
+				if isinstance(args, ParseTypeError):
+					err(f'[in {type_str.lstrip()!r}] {args}')
+
+				header = out_mod.methods[fn]
+				if header.isextern:
+					err(f'Cannot export extern function {header}')
+
+				key = tuple(arg.name for arg in args)
+				instance = header.add_sub(key)
+				instance.export_name = renamed
+				fn_queue.append((header, key))
+
+				output(f'global {renamed}')
+
 			elif match[1] == 'import':
 				# print('[P1] Import')
 
@@ -458,8 +495,10 @@ class Type:
 					mod_name = mod_name.removeprefix('lib')
 					mod_name = mod_name.removesuffix('.a')
 
-					Shared.libraries.add(mod_name)
-					Shared.library_paths.add(mod_dir)
+					if mod_name not in Shared.library_set:
+						Shared.library_set.add(mod_name)
+						Shared.libraries.append(mod_name)  # link order matters
+						Shared.library_paths.add(mod_dir)
 
 					continue
 
@@ -2308,16 +2347,23 @@ STR_TYPE.deref = CHAR_TYPE
 
 builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
 
+# Create NULL
+NULL_CONST = core_module.consts['NULL']
+NULL_CONST.type = ANY_TYPE.pointer()
+
 Shared.infile = std_file
 std_module = Type.read_module('_std', in_module=False)
 
 core_module.methods |= std_module.methods
 core_module.children |= std_module.children
+core_module.consts |= std_module.consts
 
 main_dir = os.path.dirname(os.path.abspath(argv[1]))
 os.chdir(main_dir)
 
 print()
+
+fn_queue = []
 
 Shared.infile = arg_infile
 main_module = Type.read_module('_main', in_module=False)
@@ -2326,9 +2372,13 @@ print()
 if 'main' not in main_module.methods:
 	err("No definition of function 'main' found.")
 
-main_fn = main_module.methods['main']
-main_fn.add_sub(())
-fn_queue = [(main_fn, ())]
+main_header = main_module.methods['main']
+if () in main_header.instances:
+	fn_instance = main_header.instances[()]
+else:
+	output('global main')
+	fn_queue.append((main_header, ()))
+	fn_instance = main_header.add_sub(())
 
 strings = {}
 
@@ -2451,10 +2501,7 @@ while fn_queue:
 	# We already have the line number in the struct, so we can error nicely
 
 	# Code gen
-	if fn.name == 'main':
-		output('main:')
-	else:
-		output(f'{fn_instance.mangle()}:')
+	output(f'{fn_instance.mangle()}:')
 
 	output('push rbp')
 	output(f'mov rbp, rsp')  # 32 extra bytes are always required
@@ -2642,6 +2689,9 @@ while fn_queue:
 
 		elif match[1] == 'import':
 			err('Cannot import inside a function')
+
+		elif match[1] == 'export':
+			err('Cannot export inside a function')
 
 		else:
 			match = Patterns.through_strings(r'(?<!=)=(?!=)').match(line)

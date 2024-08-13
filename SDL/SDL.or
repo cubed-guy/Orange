@@ -1,7 +1,8 @@
-import extern "x86_64-w64-mingw32\\lib\\libSDL2.a"  // we need ifdefs
-import extern "x86_64-w64-mingw32\\lib\\libSDL2main.a"
-import extern "x86_64-w64-mingw32\\lib\\libSDL2_image.a"
+import extern "x86_64-w64-mingw32\\lib\\libmingw32.a"
 import extern "x86_64-w64-mingw32\\lib\\libSDL2_create_window_helper.a"
+import extern "x86_64-w64-mingw32\\lib\\libSDL2_image.a"
+import extern "x86_64-w64-mingw32\\lib\\libSDL2main.a"
+import extern "x86_64-w64-mingw32\\lib\\libSDL2.a"  // we need ifdefs
 
 import video   "SDL_video.or"
 import surface "SDL_surface.or"

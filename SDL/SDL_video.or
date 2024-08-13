@@ -53,3 +53,5 @@ extern SDL_GetWindowSurface: &Window window -> &surface.Surface
 extern SDL_DestroyWindow: &Window window
 
 extern SDL_CreateWindowFromStruct: &WindowParams args -> &Window
+
+extern SDL_UpdateWindowSurface: &Window window -> int

@@ -829,7 +829,7 @@ fn enums
 	end
 end
 
-// import SDL "SDL/SDL.or"
+import SDL "SDL/SDL.or"
 
 fn sdl_tests
 	let w int
@@ -848,11 +848,11 @@ fn sdl_tests
 
 	let window &SDL.video.Window
 
-	// Our calling convention doesn't supports only upto 4 arguments on Windows.
+	// Our calling convention supports only upto 4 arguments on Windows.
 	// window = SDL.SDL_CreateWindow("SDL!", SDL.video.Window::POS_UNDEFINED, SDL.video.Window::POS_UNDEFINED, w, h, SDL.Window::SHOWN)
 	let window_params SDL.video.WindowParams
 
-	window_params.title = "SDL!"
+	window_params.title = "SDL from Orange!"
 	window_params.x = SDL.video.Window::POS_UNDEFINED
 	window_params.y = SDL.video.Window::POS_UNDEFINED
 	window_params.w = w
@@ -860,12 +860,33 @@ fn sdl_tests
 	window_params.flags = SDL.video.WindowFlags.from{SDL.video.Window::SHOWN}
 
 	println("STARTING WINDOW")
-	// return
+
 	window = SDL.video.SDL_CreateWindowFromStruct(&window_params)
-	// if window == 0
-	// 	println("Could not initialise sdl window")
-	// 	return
-	// end
+	if window == 0
+		println("Could not initialise sdl window")
+		return
+	end
+
+	let display &SDL.surface.Surface
+	display = SDL.video.SDL_GetWindowSurface(window)
+
+	println("GOT DISPLAY")
+
+	let rect_null &SDL.rect.Rect
+	let dummy_offset int
+	dummy_offset = rect_null - NULL
+	rect_null = rect_null - dummy_offset
+
+	let colour int
+	colour = 34
+	colour = colour << 8
+	colour = colour | 34
+	colour = colour << 8
+	colour = colour | 34
+
+	SDL.surface.SDL_FillRect(display, rect_null, colour)
+
+	SDL.video.SDL_UpdateWindowSurface(window)
 
 	let m int
 	m = 150000
@@ -877,30 +898,35 @@ fn sdl_tests
 end
 
 fn main
-	basics()
-	operations()
-	control_flow()
-	pointers()
-	alloc_stuff()
-	linked_lists()
-	polymorphic_structs()
-	classmethods()
-	array_index()
-	// dictionaries()
-	streq_tests()
-	mul_tests()
-	more_meta()
-	// scanf_test()
-	passing_args()
-	nested_types()
-	imports()
-	generic_prints()
-	constants()
-	big_moves()
-	enums()
-	// sdl_tests()
+	println("Hello, World!")
 
-	println("HI")
+	// basics()
+	// operations()
+	// control_flow()
+	// pointers()
+	// alloc_stuff()
+	// linked_lists()
+	// polymorphic_structs()
+	// classmethods()
+	// array_index()
+	// // dictionaries()
+	// streq_tests()
+	// mul_tests()
+	// more_meta()
+	// // scanf_test()
+	// passing_args()
+	// nested_types()
+	// imports()
+	// generic_prints()
+	// constants()
+	// big_moves()
+	// enums()
+	sdl_tests()
+
+	// println("HI")
 
 	// exit(23)
+
+	SDL.SDL_Quit()
 end
+export SDL_main main  // For SDL to work
