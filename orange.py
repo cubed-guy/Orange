@@ -119,6 +119,28 @@ class Patterns:
 		return cls.re.compile(rf'(?P<pre>(?:([\'"])(?:\\?.)*?\2|[^\'"])*?)(?P<target>{c})(?P<post>.*)')
 
 	@staticmethod
+	def alias_through_strings(s, *, start=0) -> tuple[str, str]:
+		while 1:
+			i = s.find('as ', start)
+
+			j = s.find('"', start, i)
+			if j == -1:
+				if i == -1: return None, s
+
+				if i != 0 and not s[i-1].isalpha():
+					return s[:i].rstrip(), s[i+2:].lstrip()
+
+				start = i+1
+				continue
+
+			j += 1
+			while 1:
+				j = s.find('"', j)
+				k = j - len(s[:j].rstrip('\\'))
+				if not k&1: start = j+1; break
+				j += 1
+
+	@staticmethod
 	def find_through_strings(s, c, *, start=0):
 		while 1:
 			i = s.find(c, start)
@@ -297,6 +319,7 @@ class Type:
 		self.children = {}   # nested types
 		self.methods = {}
 
+		self.last_field_id = None
 		self.fields = {}
 		self.consts = {}
 		self.instances = {}  # polymorphic instances
@@ -601,7 +624,7 @@ class Type:
 					ret_type, out_mod, None, Shared.line_no, Shared.infile,
 					isextern = True
 				)
-				print(f'EXTERN   {name}')
+				# print(f'EXTERN   {name}')
 				curr_type.methods[name] = fn
 
 				output('extern', name)
@@ -613,7 +636,8 @@ class Type:
 					if not type_stack: err('Global variables are not yet supported')
 
 					# print(f'[P1] New field in {curr_type!r}')
-					match = Patterns.split_word.match(match[2])
+					field_id, alias = Patterns.alias_through_strings(match[2])
+					match = Patterns.split_word.match(alias)
 					name = match[1]
 					T = match[2]
 
@@ -628,19 +652,39 @@ class Type:
 					)
 
 					if not isinstance(parse_type_result, ParseTypeError):
+						if len(parse_type_result) != 1:
+							err('Field declaration expects exactly 1 type. '
+								f'{T!r} resolves to '
+								f'{len(parse_type_result)} types.')
 						T, = parse_type_result
-						print('GOT REAL TYPE', T)
+						# print('GOT REAL TYPE', T)
 					else:
-						print('GOT FAKE TYPE', T)
+						print(f'{T.strip()!r} is not defined.')
 
 					if curr_type.is_enum:
 						offset = 0
 					else:
 						offset = curr_type.size
 
+					if field_id is not None:
+						if not curr_type.is_enum:
+							err('Field alias is allowed only for enums types. '
+								f'{curr_type} is a struct.')
+
+						field_id = eval_const(field_id, types=types, variables=out_mod.consts)
+						if not field_id.type.is_int():
+							err('Enum field alias expected an integer. '
+								f'Got {field_id.type}.')
+						curr_type.last_field_id = field_id.value
+
+					elif curr_type.last_field_id is None:
+						curr_type.last_field_id = 0  # Default enum start id
+					else:
+						curr_type.last_field_id += 1
+
 					curr_type.fields[name] = Variable(
 						name, offset, T, Shared.line_no,
-						field_id = len(curr_type.fields),
+						field_id = curr_type.last_field_id,
 					)
 					# print(f'  Created a field {name!r} of {T}')
 					if curr_type.size is not None:
@@ -649,9 +693,11 @@ class Type:
 							curr_type.size = None
 						elif curr_type.is_enum:
 							curr_type.size = max(curr_type.size, T.size)
+						elif T.size is None:
+							err(f'{T} is polymorphic. Cannot instantiate it without type arguments.')
 						else:
+							print(f'{curr_type}: adding {T} (size = {T.size})')
 							curr_type.size += T.size
-							# print('curr_type.size:', f'Setting size to None')
 					# else:
 						# print('curr_type.size:', 'Size is already None')
 
@@ -681,16 +727,28 @@ class Type:
 					type_stack.pop()  # no need to check emptiness.
 
 					if curr_type.is_enum:
-						n_variants = len(curr_type.fields)
-						discriminator_size = get_discriminator_size(n_variants)
+						if curr_type.size is None:
+							err('Polymorphic enums are not yet supported.')
 
-						curr_type.size += discriminator_size
-						for field in curr_type.fields.values():
-							field.offset += discriminator_size
+						print('Getting discr size of', curr_type)
+						if curr_type.last_field_id is not None:
+							curr_type.last_field_id = max(
+								field.field_id
+								for field in curr_type.fields.values()
+							)
+							discriminator_size = get_discriminator_size(
+								curr_type.last_field_id
+							)
+
+							curr_type.size += discriminator_size
+							for field in curr_type.fields.values():
+								field.offset += discriminator_size
 
 						print('END ENUM', curr_type)
 					else:
 						print('END TYPE', curr_type)
+
+					print(f'{curr_type} has a size of {curr_type.size}')
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = out_mod
@@ -764,10 +822,10 @@ class Type:
 
 		# print('GET INSTANCE FIELDS OF', self, self.fields, f'({instance.fields = })')
 
-		n_variants = len(self.fields)
-		# (n_variants-1).bit_length() is the number of bits required
-		# (x-1)//n+1 rounds up?
-		discriminator_size = get_discriminator_size(n_variants)
+		if self.is_enum:
+			# (max_field_id).bit_length() is the number of bits required
+			# (x-1)//n+1 rounds up?
+			discriminator_size = get_discriminator_size(self.last_field_id)
 
 		for name, field in self.fields.items():
 			T = field.type
@@ -1196,12 +1254,12 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 					f'{variant.type}. Got {T} instead.'
 				)
 
-		discriminator_size = get_discriminator_size(len(Enum_type.fields))
+		discriminator_size = get_discriminator_size(Enum_type.last_field_id)
 		if discriminator_size:
 			clauses = (
 				Clause(
 					f'{variant.field_id}',
-					size=get_discriminator_size(len(Enum_type.fields))
+					size=get_discriminator_size(Enum_type.last_field_id)
 				),
 				*clauses,
 			)
@@ -1397,7 +1455,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			# print(f'  {T = } {T.is_enum = }')
 			if T.is_enum:
-				discriminator_size = get_discriminator_size(len(T.fields))
+				discriminator_size = get_discriminator_size(T.last_field_id)
 
 				insts.append(
 					# crashed if you have more than 65536 fields
@@ -2291,9 +2349,9 @@ def split_size(size) -> tuple[int, ...]:
 
 	return sizes
 
-def get_discriminator_size(n_variants):
-	if n_variants == 0: return 0
-	return ((n_variants-1).bit_length()-1) // 8 + 1
+def get_discriminator_size(max_field_id):
+	if max_field_id is None: return 0
+	return (max_field_id.bit_length()-1) // 8 + 1
 
 # Strongly typed
 
@@ -2446,7 +2504,7 @@ if __name__ == '__main__':
 			match = Patterns.split_word.match(line)
 			if match[1] == 'let':
 				name, type_str = match[2].split(maxsplit=1)
-				print('DECALRATION:', (name, type_str))
+				# print('DECLARATION:', (name, type_str))
 
 				if name in local_variables:
 					var = variables[name]
@@ -2476,7 +2534,6 @@ if __name__ == '__main__':
 				if T is ANY_TYPE:
 					err("A variable of type 'any' must be a pointer")
 
-				print(f'{T} has a size of {T.size}')
 				offset += T.size
 				local_variables.add(name)
 				variables[name] = Variable(name, offset, T, Shared.line_no)

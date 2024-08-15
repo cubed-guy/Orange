@@ -13,6 +13,21 @@ fn println T: T arg
 	puts("")
 end
 
+enum bool
+	let 0 as false void
+	let 1 as true void
+
+	fn _print: bool self
+		if self.true
+			print("True")
+		elif self.false
+			print("False")
+		else
+			print("bool.Undefined")
+		end
+	end
+end
+
 type UnboundArr T
 	let _ptr &T
 
