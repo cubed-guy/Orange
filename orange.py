@@ -20,6 +20,8 @@
 # DONE: import extern
 # DONE: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
 # DONE: exposed renaming support
+# TODO: explicit enum field ids
+# TODO: namespace aliasing
 # TODO: hex and bin literals
 # TODO: SDL bindings
 # TODO: enum consts
@@ -1446,6 +1448,10 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			err("Can't take address of a character literal")
 		if addr is Address_modes.DEREF:
 			err("Can't dereference a character literal")
+
+		if len(token) == 1:
+			err('"\'" is not a valid character literal.')
+
 		if token[-1] != "'":
 			err('Expected end quote (\') at the end of character literal.')
 
@@ -2300,549 +2306,551 @@ standard_dest_regs = (Register.a, Register.b)
 dest_reg_fmts = ('dest_reg', 'aux_reg')
 
 orange_dir = os.path.dirname(__file__)
-core_file = open(f'{orange_dir}/lib/core.or')
-std_file = open(f'{orange_dir}/lib/std.or')
 
-# Builtins
+if __name__ == '__main__':
+	core_file = open(f'{orange_dir}/lib/core.or')
+	std_file = open(f'{orange_dir}/lib/std.or')
 
-PTR_TYPE = Type('_Ptr', PTR_SIZE, args=('T',))
-PTR_TYPE.size = 8
+	# Builtins
 
-types = {}
-core_module = None
+	PTR_TYPE = Type('_Ptr', PTR_SIZE, args=('T',))
+	PTR_TYPE.size = 8
 
-Shared.infile = core_file
-core_module = Type.read_module('_core', in_module=False)
+	types = {}
+	core_module = None
 
-builtin_types = core_module.children
+	Shared.infile = core_file
+	core_module = Type.read_module('_core', in_module=False)
 
-CORE_PTR_TYPE = core_module.children['_Ptr']
+	builtin_types = core_module.children
 
-# modify the dict so it effects existing instances
-PTR_TYPE.methods |= CORE_PTR_TYPE.methods
+	CORE_PTR_TYPE = core_module.children['_Ptr']
 
-builtin_types['any'] = Type('any', None)
-ANY_TYPE = builtin_types['any']
+	# modify the dict so it effects existing instances
+	PTR_TYPE.methods |= CORE_PTR_TYPE.methods
 
-U64_TYPE = builtin_types['u64']
-U64_TYPE.size = 8
-# print('FORCE SET SIZE = 8 [U64]')
+	builtin_types['any'] = Type('any', None)
+	ANY_TYPE = builtin_types['any']
 
-VOID_TYPE = builtin_types['void']
-VOID_TYPE.size = 0
-# print('FORCE SET SIZE = 0 [VOID]')
+	U64_TYPE = builtin_types['u64']
+	U64_TYPE.size = 8
+	# print('FORCE SET SIZE = 8 [U64]')
 
-CHAR_TYPE = builtin_types['char']
-CHAR_TYPE.size = 1
-# print('FORCE SET SIZE = 1 [CHAR]')
+	VOID_TYPE = builtin_types['void']
+	VOID_TYPE.size = 0
+	# print('FORCE SET SIZE = 0 [VOID]')
 
-INT_TYPE = builtin_types['int']
-INT_TYPE.size = 4
-# print('FORCE SET SIZE = 4 [INT]')
+	CHAR_TYPE = builtin_types['char']
+	CHAR_TYPE.size = 1
+	# print('FORCE SET SIZE = 1 [CHAR]')
 
-STR_TYPE = builtin_types['str']
-STR_TYPE.deref = CHAR_TYPE
+	INT_TYPE = builtin_types['int']
+	INT_TYPE.size = 4
+	# print('FORCE SET SIZE = 4 [INT]')
 
-# print('STR_TYPE size =', STR_TYPE.size)
+	STR_TYPE = builtin_types['str']
+	STR_TYPE.deref = CHAR_TYPE
 
-builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
+	# print('STR_TYPE size =', STR_TYPE.size)
 
-# Create NULL
-NULL_CONST = core_module.consts['NULL']
-NULL_CONST.type = ANY_TYPE.pointer()
+	builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
 
-Shared.infile = std_file
-std_module = Type.read_module('_std', in_module=False)
+	# Create NULL
+	NULL_CONST = core_module.consts['NULL']
+	NULL_CONST.type = ANY_TYPE.pointer()
 
-core_module.methods |= std_module.methods
-core_module.children |= std_module.children
-core_module.consts |= std_module.consts
+	Shared.infile = std_file
+	std_module = Type.read_module('_std', in_module=False)
 
-main_dir = os.path.dirname(os.path.abspath(argv[1]))
-os.chdir(main_dir)
+	core_module.methods |= std_module.methods
+	core_module.children |= std_module.children
+	core_module.consts |= std_module.consts
 
-print()
+	main_dir = os.path.dirname(os.path.abspath(argv[1]))
+	os.chdir(main_dir)
 
-fn_queue = []
+	print()
 
-Shared.infile = arg_infile
-main_module = Type.read_module('_main', in_module=False)
-print()
+	fn_queue = []
 
-if 'main' not in main_module.methods:
-	err("No definition of function 'main' found.")
+	Shared.infile = arg_infile
+	main_module = Type.read_module('_main', in_module=False)
+	print()
 
-main_header = main_module.methods['main']
-if () in main_header.instances:
-	fn_instance = main_header.instances[()]
-else:
-	output('global main')
-	fn_queue.append((main_header, ()))
-	fn_instance = main_header.add_sub(())
+	if 'main' not in main_module.methods:
+		err("No definition of function 'main' found.")
 
-strings = {}
+	main_header = main_module.methods['main']
+	if () in main_header.instances:
+		fn_instance = main_header.instances[()]
+	else:
+		output('global main')
+		fn_queue.append((main_header, ()))
+		fn_instance = main_header.add_sub(())
 
-while fn_queue:
-	fn, instance_key = fn_queue.pop(0)
-	fn_instance = fn.instances[instance_key]
+	strings = {}
 
-	# print('\n', fn.name, instance_key, sep = '')
+	while fn_queue:
+		fn, instance_key = fn_queue.pop(0)
+		fn_instance = fn.instances[instance_key]
 
-	if fn_instance.template.isextern:
-		# print(f'DEQUEUED EXTERN {fn}, {instance_key}')
-		continue
-	# else:
-		# print('DEQUEUED Function', fn)
+		# print('\n', fn.name, instance_key, sep = '')
 
-	# fn_instance = fn.add_sub(instance_key)
-	# if fn_instance is None: continue
+		if fn_instance.template.isextern:
+			# print(f'DEQUEUED EXTERN {fn}, {instance_key}')
+			continue
+		# else:
+			# print('DEQUEUED Function', fn)
 
-	# 2 passes. allocate variable space first
+		# fn_instance = fn.add_sub(instance_key)
+		# if fn_instance is None: continue
 
-	output(f'\n; {fn_instance.type_mappings}')
+		# 2 passes. allocate variable space first
 
-	# print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
+		output(f'\n; {fn_instance.type_mappings}')
 
-	curr_mod = fn.module
-	types = curr_mod.children
+		# print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
 
-	fn_types = types | fn_instance.type_mappings
+		curr_mod = fn.module
+		types = curr_mod.children
 
-	fn_instance.init_args_vars(types)
-	offset = fn_instance.offset
+		fn_types = types | fn_instance.type_mappings
 
-	variables = curr_mod.consts | fn_instance.arg_vars
-	local_variables = {*fn_instance.arg_vars}
+		fn_instance.init_args_vars(types)
+		offset = fn_instance.offset
 
-	# print('Instantiating new concrete function:')
-	# print('Instantiating', fn.name, 'with', fn_instance.type_mappings, 'as', fn_instance.mangle())
-	# print('Module:', curr_mod)
-	# print('Variables:', variables)
-	# print('Constants:', curr_mod.consts)
-	# print('Types:', fn_types)
+		variables = curr_mod.consts | fn_instance.arg_vars
+		local_variables = {*fn_instance.arg_vars}
 
-	scope_level = 1
-
-	Shared.infile = fn.infile
+		# print('Instantiating new concrete function:')
+		# print('Instantiating', fn.name, 'with', fn_instance.type_mappings, 'as', fn_instance.mangle())
+		# print('Module:', curr_mod)
+		# print('Variables:', variables)
+		# print('Constants:', curr_mod.consts)
+		# print('Types:', fn_types)
 
-	Shared.infile.seek(fn.tell)
-	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
-		# let x type
-		# Variable{name, offset, type}
-		# Type{name, size, fields}
-		# Field{name, offset, type}
+		scope_level = 1
 
-		line = Patterns.stmt.match(Shared.line)[2]
-		if not line: continue
+		Shared.infile = fn.infile
 
-		match = Patterns.split_word.match(line)
-		if match[1] == 'let':
-			name, type_str = match[2].split(maxsplit=1)
-			print('DECALRATION:', (name, type_str))
+		Shared.infile.seek(fn.tell)
+		for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
+			# let x type
+			# Variable{name, offset, type}
+			# Type{name, size, fields}
+			# Field{name, offset, type}
 
-			if name in local_variables:
-				var = variables[name]
-				err(f'Variable {name!r} already declared in '
-					f'line {var.decl_line_no}')
+			line = Patterns.stmt.match(Shared.line)[2]
+			if not line: continue
 
-			# print(f'{type_str = }')
-			parse_type_result = parse_type(type_str.lstrip(), fn_types,
-				variables=variables)
-			# print('EXIT PARSETYPE')
-			if isinstance(parse_type_result, ParseTypeError):
-				err(f'[in {type_str.lstrip()!r}] {parse_type_result}')
-				# one of the arguments in T is polymorphic
-				# DRY this up maybe
-				# match = Patterns.split_word.match(type_str)
-				# if match[1].startswith('&'):
-				# 	pointer = True
-				# 	T = fn_types[match[1][1:].strip()]
-				# else:
-				# 	pointer = False
-				# 	T = fn_types[match[1]]
-				# T.get_instance(tuple(parse_type(match[2])))
-
-			# print(f'Declaration type list of {type_str!r}: {parse_type_result}')
-			T, = parse_type_result
-
-			if T is ANY_TYPE:
-				err("A variable of type 'any' must be a pointer")
-
-			print(f'{T} has a size of {T.size}')
-			offset += T.size
-			local_variables.add(name)
-			variables[name] = Variable(name, offset, T, Shared.line_no)
-
-		elif match[1] == 'const':
-			split = match[2].split(maxsplit=1)
-			if len(split) != 2:
-				err('An expression is required to declare a constant')
-
-			name, exp = split
-
-			if name in local_variables:
-				err(f'{name!r} is already declared')
-
-			local_variables.add(name)
-			const_var = eval_const(exp, fn_types,
-				variables=variables)
-			# const_var.name = name
-			variables[name] = const_var
-
-
-		elif match[1] in ('if', 'while'):
-			scope_level += 1
-
-		elif match[1] == 'end':
-			scope_level -= 1
-			if not scope_level: break  # end of function
-
-
-	# I might be able to support overloading too and just disallow conflicts
-	# We already have the line number in the struct, so we can error nicely
-
-	# Code gen
-	output(f'{fn_instance.mangle()}:')
-
-	output('push rbp')
-	output(f'mov rbp, rsp')  # 32 extra bytes are always required
-
-	# align and push only if there are function calls
-	offset = ((offset+1) | 15) + 33  # (round up to multiple of 15) + 32
-	output(f'sub rsp, {offset}')
-
-	for var in variables.values():
-		if isinstance(var, Const): continue
-		var.offset = offset - var.offset
-
-	# Populate arguments
-	if len(fn.args) > len(arg_regs):
-		err('[Internal Error] Too many arguments; this was not checked earlier')
-	for (_, argname), arg_reg in zip(fn.args, arg_regs):
-		arg = variables[argname]
-		reg_str = arg_reg.encode(size=arg.type.size)
-		output(f'mov {size_prefix(arg.type.size)} [rsp + {arg.offset}], ',
-			reg_str)
-
-	ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
-
-	Shared.infile.seek(fn.tell)
-	for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
-
-		match = Patterns.stmt.match(Shared.line)
-		line = match[2]  # maybe indentation?
-		if not line: continue
-
-		output(f'; ({Shared.line_no}) {Shared.line.strip()}')
-		# print(f'{Shared.line_no} {Shared.line.strip()!r}')
-
-		match = Patterns.split_word.match(line)
-
-		if not match: match = Subscriptable(); print(match)
-
-		if   match[1] == 'let': continue
-		elif match[1] == 'const': continue
-		elif match[1] == 'return':
-			if fn.name == 'main': dest_regs = arg_regs[0],
-			else: dest_regs = standard_dest_regs
-
-			if not match[2]:
-				ret_type = types['void']
-			else:
-				# We don't use the expected size
-				# for the case of returning UNSPECIFIED_INT
-				ret_type = parse_exp(match[2].strip(),
-					dest_regs = dest_regs, fn_queue = fn_queue,
-					variables = variables)
-
-			fn_type_list = parse_type(fn.ret_type, fn_types,
-				variables=variables)
-
-			if fn_type_list is None:
-				# TODO: better message
-				err(f'Type {fn.ret_type!r} is not available.')
-			if len(fn_type_list) != 1:
-				err('Return type must be exactly one type')
-			expected_ret_type, = fn_type_list
-
-			if ret_type is UNSPECIFIED_INT:
-				if not expected_ret_type.is_int():
+			match = Patterns.split_word.match(line)
+			if match[1] == 'let':
+				name, type_str = match[2].split(maxsplit=1)
+				print('DECALRATION:', (name, type_str))
+
+				if name in local_variables:
+					var = variables[name]
+					err(f'Variable {name!r} already declared in '
+						f'line {var.decl_line_no}')
+
+				# print(f'{type_str = }')
+				parse_type_result = parse_type(type_str.lstrip(), fn_types,
+					variables=variables)
+				# print('EXIT PARSETYPE')
+				if isinstance(parse_type_result, ParseTypeError):
+					err(f'[in {type_str.lstrip()!r}] {parse_type_result}')
+					# one of the arguments in T is polymorphic
+					# DRY this up maybe
+					# match = Patterns.split_word.match(type_str)
+					# if match[1].startswith('&'):
+					# 	pointer = True
+					# 	T = fn_types[match[1][1:].strip()]
+					# else:
+					# 	pointer = False
+					# 	T = fn_types[match[1]]
+					# T.get_instance(tuple(parse_type(match[2])))
+
+				# print(f'Declaration type list of {type_str!r}: {parse_type_result}')
+				T, = parse_type_result
+
+				if T is ANY_TYPE:
+					err("A variable of type 'any' must be a pointer")
+
+				print(f'{T} has a size of {T.size}')
+				offset += T.size
+				local_variables.add(name)
+				variables[name] = Variable(name, offset, T, Shared.line_no)
+
+			elif match[1] == 'const':
+				split = match[2].split(maxsplit=1)
+				if len(split) != 2:
+					err('An expression is required to declare a constant')
+
+				name, exp = split
+
+				if name in local_variables:
+					err(f'{name!r} is already declared')
+
+				local_variables.add(name)
+				const_var = eval_const(exp, fn_types,
+					variables=variables)
+				# const_var.name = name
+				variables[name] = const_var
+
+
+			elif match[1] in ('if', 'while'):
+				scope_level += 1
+
+			elif match[1] == 'end':
+				scope_level -= 1
+				if not scope_level: break  # end of function
+
+
+		# I might be able to support overloading too and just disallow conflicts
+		# We already have the line number in the struct, so we can error nicely
+
+		# Code gen
+		output(f'{fn_instance.mangle()}:')
+
+		output('push rbp')
+		output(f'mov rbp, rsp')  # 32 extra bytes are always required
+
+		# align and push only if there are function calls
+		offset = ((offset+1) | 15) + 33  # (round up to multiple of 15) + 32
+		output(f'sub rsp, {offset}')
+
+		for var in variables.values():
+			if isinstance(var, Const): continue
+			var.offset = offset - var.offset
+
+		# Populate arguments
+		if len(fn.args) > len(arg_regs):
+			err('[Internal Error] Too many arguments; this was not checked earlier')
+		for (_, argname), arg_reg in zip(fn.args, arg_regs):
+			arg = variables[argname]
+			reg_str = arg_reg.encode(size=arg.type.size)
+			output(f'mov {size_prefix(arg.type.size)} [rsp + {arg.offset}], ',
+				reg_str)
+
+		ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
+
+		Shared.infile.seek(fn.tell)
+		for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
+
+			match = Patterns.stmt.match(Shared.line)
+			line = match[2]  # maybe indentation?
+			if not line: continue
+
+			output(f'; ({Shared.line_no}) {Shared.line.strip()}')
+			# print(f'{Shared.line_no} {Shared.line.strip()!r}')
+
+			match = Patterns.split_word.match(line)
+
+			if not match: match = Subscriptable(); print(match)
+
+			if   match[1] == 'let': continue
+			elif match[1] == 'const': continue
+			elif match[1] == 'return':
+				if fn.name == 'main': dest_regs = arg_regs[0],
+				else: dest_regs = standard_dest_regs
+
+				if not match[2]:
+					ret_type = types['void']
+				else:
+					# We don't use the expected size
+					# for the case of returning UNSPECIFIED_INT
+					ret_type = parse_exp(match[2].strip(),
+						dest_regs = dest_regs, fn_queue = fn_queue,
+						variables = variables)
+
+				fn_type_list = parse_type(fn.ret_type, fn_types,
+					variables=variables)
+
+				if fn_type_list is None:
+					# TODO: better message
+					err(f'Type {fn.ret_type!r} is not available.')
+				if len(fn_type_list) != 1:
+					err('Return type must be exactly one type')
+				expected_ret_type, = fn_type_list
+
+				if ret_type is UNSPECIFIED_INT:
+					if not expected_ret_type.is_int():
+						err('Mismatched type. '
+							f'{fn.name} expects {fn_types[fn.ret_type]}. '
+							f'Trying to return {ret_type}')
+				elif ret_type is not expected_ret_type:
 					err('Mismatched type. '
 						f'{fn.name} expects {fn_types[fn.ret_type]}. '
 						f'Trying to return {ret_type}')
-			elif ret_type is not expected_ret_type:
-				err('Mismatched type. '
-					f'{fn.name} expects {fn_types[fn.ret_type]}. '
-					f'Trying to return {ret_type}')
 
-			if fn.name == 'main':
-				output('call exit')
-			else:
-				output('mov rsp, rbp')
-				output('pop rbp')
-				output('ret')
-
-		elif match[1] == 'while':
-			ctrl_no = Ctrl.next()
-
-			ctrl = Ctrl(ctrl_no, Branch.WHILE)
-			output(f'{ctrl.label}:')
-			ctrl_stack.append(ctrl)
-
-			ret_flag = parse_exp(match[2].strip(),
-				dest_regs = Flag, fn_queue = fn_queue,
-				variables = variables
-			)
-
-			if ret_flag is Flag.ALWAYS:
-				output(f'jmp _E{ctrl_no}')
-			elif ret_flag is not Flag.NEVER:
-				output(f'j{(~ret_flag).name} _E{ctrl_no}')
-
-		elif match[1] == 'if':
-			ctrl_no = Ctrl.next()
-			ctrl = Ctrl(ctrl_no, 0)
-			ctrl_stack.append(ctrl)
-
-			# TODO: parse_exp() returns a Flag object if dest_reg is flags
-			ret_flag = parse_exp(match[2].strip(),
-				dest_regs = Flag, fn_queue = fn_queue,
-				variables = variables
-			)
-
-			if ret_flag is Flag.ALWAYS:
-				output(f'jmp _E{ctrl_no}_1')
-			elif ret_flag is not Flag.NEVER:
-				output(f'j{(~ret_flag).name} _E{ctrl_no}_1')
-
-		elif match[1] == 'elif':
-			if not ctrl_stack or ctrl_stack[-1].branch is Branch.WHILE:
-				err('elif is not after if')
-
-			ctrl = ctrl_stack[-1]
-
-			ctrl.branch += 1
-
-			output(f'jmp _END{ctrl.ctrl_no}')
-			output(f'_E{ctrl.ctrl_no}_{ctrl.branch}:')
-
-
-			# TODO: parse_exp() returns a Flag object if dest_reg is flags
-			ret_flag = parse_exp(match[2].strip(),
-				dest_regs = Flag, fn_queue = fn_queue,
-				variables = variables
-			)
-
-			if ret_flag is Flag.ALWAYS:
-				output(f'jmp _E{ctrl.ctrl_no}_{ctrl.branch+1}')
-			elif ret_flag is not Flag.NEVER:
-				output(f'j{(~ret_flag).name} _E{ctrl.ctrl_no}_{ctrl.branch+1}')
-
-		elif match[1] == 'else':
-			if not ctrl_stack or ctrl_stack[-1].branch is Branch.WHILE:
-				err('else is not after if')
-
-			ctrl = ctrl_stack[-1]
-
-			output(f'jmp _END{ctrl.ctrl_no}')
-			output(f'_E{ctrl.ctrl_no}_{ctrl.branch+1}:')
-
-			ctrl.branch = Branch.ELSE
-
-		elif match[1] == 'end':
-			if not ctrl_stack: err("'end' outside any control block.")
-
-			ctrl = ctrl_stack.pop()
-			if ctrl.branch is Branch.WHILE:
-				output(f'jmp {ctrl.label}')
-				output(f'_E{ctrl.ctrl_no}:')
-			elif ctrl.branch is Branch.ELSE:
-				output(f'_END{ctrl.ctrl_no}:')
-			elif ctrl.branch is Branch.FUNCTION:
-				break
-			else:  # ctrl.branch is an integer
-				output(f'_E{ctrl.ctrl_no}_{ctrl.branch+1}:')
-				output(f'_END{ctrl.ctrl_no}:')
-
-		elif match[1] == 'break':
-			for ctrl in reversed(ctrl_stack):
-				if ctrl.branch is Branch.WHILE:
-					break
-			else:
-				err('break outside a loop')
-
-			output(f'jmp _E{ctrl.ctrl_no}')
-
-		elif match[1] == 'continue':
-			for ctrl in reversed(ctrl_stack):
-				if ctrl.branch is Branch.WHILE:
-					break
-			else:
-				err('continue outside a loop')
-
-			output(f'jmp {ctrl.label}')
-
-		elif match[1] == 'type':
-			err('Local types are not yet supported')
-
-		elif match[1] == 'enum':
-			err('Local types are not yet supported')
-
-		elif match[1] == 'import':
-			err('Cannot import inside a function')
-
-		elif match[1] == 'export':
-			err('Cannot export inside a function')
-
-		else:
-			match = Patterns.through_strings(r'(?<!=)=(?!=)').match(line)
-
-			if match:
-				exp = match['post'].strip()
-				dest = match['pre'].strip()
-				# print(f'{exp = }; {dest = }; {match[2] = }')
-			else:
-				exp = line
-				dest = None
-
-			ret_type = parse_exp(exp.strip(),
-				dest_regs = standard_dest_regs, fn_queue = fn_queue,
-				variables = variables)
-
-			if dest is not None:
-				index = Patterns.find_through_strings(dest, '[')
-
-				if index != -1:
-					dest_token = dest[:index]
-					args_str = dest[index:].strip()
+				if fn.name == 'main':
+					output('call exit')
 				else:
-					dest_token = dest
+					output('mov rsp, rbp')
+					output('pop rbp')
+					output('ret')
 
-				insts, dest_clauses, dest_type = parse_token(
-					dest_token, fn_types, variables = variables
+			elif match[1] == 'while':
+				ctrl_no = Ctrl.next()
+
+				ctrl = Ctrl(ctrl_no, Branch.WHILE)
+				output(f'{ctrl.label}:')
+				ctrl_stack.append(ctrl)
+
+				ret_flag = parse_exp(match[2].strip(),
+					dest_regs = Flag, fn_queue = fn_queue,
+					variables = variables
 				)
 
-				if dest_type is UNSPECIFIED_INT or not dest_clauses:
-					err(f'Cannot assign to {dest}')
+				if ret_flag is Flag.ALWAYS:
+					output(f'jmp _E{ctrl_no}')
+				elif ret_flag is not Flag.NEVER:
+					output(f'j{(~ret_flag).name} _E{ctrl_no}')
 
-				if index != -1:
-					first_arg = arg_regs[0]
-					second_arg = arg_regs[1]
+			elif match[1] == 'if':
+				ctrl_no = Ctrl.next()
+				ctrl = Ctrl(ctrl_no, 0)
+				ctrl_stack.append(ctrl)
 
-					if len(dest_clauses) != 1:
-						err("'[]=' does not support non-standard sizes yet")
+				# TODO: parse_exp() returns a Flag object if dest_reg is flags
+				ret_flag = parse_exp(match[2].strip(),
+					dest_regs = Flag, fn_queue = fn_queue,
+					variables = variables
+				)
 
-					dest_clause, = dest_clauses
+				if ret_flag is Flag.ALWAYS:
+					output(f'jmp _E{ctrl_no}_1')
+				elif ret_flag is not Flag.NEVER:
+					output(f'j{(~ret_flag).name} _E{ctrl_no}_1')
 
-					# the value of the expression is in rax
-					for inst in insts:
-						output(inst.format(dest_reg=first_arg))
+			elif match[1] == 'elif':
+				if not ctrl_stack or ctrl_stack[-1].branch is Branch.WHILE:
+					err('elif is not after if')
 
-					# TODO: Use big moves
-					# TODO: I need a convenience function
-					# so I can use it without thinking
-					# and I don't make mistakes.
-					# But first, I need to figure out
-					# what it means to not make a mistake.
+				ctrl = ctrl_stack[-1]
 
-					# print(f'{dest_clause = }')
-					output(
-						f'mov {first_arg:{dest_clause.size}}, '
-						f'''{dest_clause.asm_str.format(
-							dest_reg=first_arg, aux_reg=second_arg
-						)}'''
-					)
-					# print(f'Moving into {dest_clause!r}')
-					ret_size = Type.get_size(ret_type)
-					output(f'mov {second_arg:{ret_size}}, '
-						f'{Register.a:{ret_size}}')
+				ctrl.branch += 1
 
-					setitem_result = call_function(f'{dest_type.name}._setitem',
-						[dest_type, ret_type], args_str,
-						variables=variables)
+				output(f'jmp _END{ctrl.ctrl_no}')
+				output(f'_E{ctrl.ctrl_no}_{ctrl.branch}:')
 
-					if setitem_result is not VOID_TYPE:
-						err('_setitem() must return void')
 
+				# TODO: parse_exp() returns a Flag object if dest_reg is flags
+				ret_flag = parse_exp(match[2].strip(),
+					dest_regs = Flag, fn_queue = fn_queue,
+					variables = variables
+				)
+
+				if ret_flag is Flag.ALWAYS:
+					output(f'jmp _E{ctrl.ctrl_no}_{ctrl.branch+1}')
+				elif ret_flag is not Flag.NEVER:
+					output(f'j{(~ret_flag).name} _E{ctrl.ctrl_no}_{ctrl.branch+1}')
+
+			elif match[1] == 'else':
+				if not ctrl_stack or ctrl_stack[-1].branch is Branch.WHILE:
+					err('else is not after if')
+
+				ctrl = ctrl_stack[-1]
+
+				output(f'jmp _END{ctrl.ctrl_no}')
+				output(f'_E{ctrl.ctrl_no}_{ctrl.branch+1}:')
+
+				ctrl.branch = Branch.ELSE
+
+			elif match[1] == 'end':
+				if not ctrl_stack: err("'end' outside any control block.")
+
+				ctrl = ctrl_stack.pop()
+				if ctrl.branch is Branch.WHILE:
+					output(f'jmp {ctrl.label}')
+					output(f'_E{ctrl.ctrl_no}:')
+				elif ctrl.branch is Branch.ELSE:
+					output(f'_END{ctrl.ctrl_no}:')
+				elif ctrl.branch is Branch.FUNCTION:
+					break
+				else:  # ctrl.branch is an integer
+					output(f'_E{ctrl.ctrl_no}_{ctrl.branch+1}:')
+					output(f'_END{ctrl.ctrl_no}:')
+
+			elif match[1] == 'break':
+				for ctrl in reversed(ctrl_stack):
+					if ctrl.branch is Branch.WHILE:
+						break
 				else:
-					if ret_type is UNSPECIFIED_INT:
-						if not dest_type.is_int():
-							err(f'Cannot assign an integer into '
+					err('break outside a loop')
+
+				output(f'jmp _E{ctrl.ctrl_no}')
+
+			elif match[1] == 'continue':
+				for ctrl in reversed(ctrl_stack):
+					if ctrl.branch is Branch.WHILE:
+						break
+				else:
+					err('continue outside a loop')
+
+				output(f'jmp {ctrl.label}')
+
+			elif match[1] == 'type':
+				err('Local types are not yet supported')
+
+			elif match[1] == 'enum':
+				err('Local types are not yet supported')
+
+			elif match[1] == 'import':
+				err('Cannot import inside a function')
+
+			elif match[1] == 'export':
+				err('Cannot export inside a function')
+
+			else:
+				match = Patterns.through_strings(r'(?<!=)=(?!=)').match(line)
+
+				if match:
+					exp = match['post'].strip()
+					dest = match['pre'].strip()
+					# print(f'{exp = }; {dest = }; {match[2] = }')
+				else:
+					exp = line
+					dest = None
+
+				ret_type = parse_exp(exp.strip(),
+					dest_regs = standard_dest_regs, fn_queue = fn_queue,
+					variables = variables)
+
+				if dest is not None:
+					index = Patterns.find_through_strings(dest, '[')
+
+					if index != -1:
+						dest_token = dest[:index]
+						args_str = dest[index:].strip()
+					else:
+						dest_token = dest
+
+					insts, dest_clauses, dest_type = parse_token(
+						dest_token, fn_types, variables = variables
+					)
+
+					if dest_type is UNSPECIFIED_INT or not dest_clauses:
+						err(f'Cannot assign to {dest}')
+
+					if index != -1:
+						first_arg = arg_regs[0]
+						second_arg = arg_regs[1]
+
+						if len(dest_clauses) != 1:
+							err("'[]=' does not support non-standard sizes yet")
+
+						dest_clause, = dest_clauses
+
+						# the value of the expression is in rax
+						for inst in insts:
+							output(inst.format(dest_reg=first_arg))
+
+						# TODO: Use big moves
+						# TODO: I need a convenience function
+						# so I can use it without thinking
+						# and I don't make mistakes.
+						# But first, I need to figure out
+						# what it means to not make a mistake.
+
+						# print(f'{dest_clause = }')
+						output(
+							f'mov {first_arg:{dest_clause.size}}, '
+							f'''{dest_clause.asm_str.format(
+								dest_reg=first_arg, aux_reg=second_arg
+							)}'''
+						)
+						# print(f'Moving into {dest_clause!r}')
+						ret_size = Type.get_size(ret_type)
+						output(f'mov {second_arg:{ret_size}}, '
+							f'{Register.a:{ret_size}}')
+
+						setitem_result = call_function(f'{dest_type.name}._setitem',
+							[dest_type, ret_type], args_str,
+							variables=variables)
+
+						if setitem_result is not VOID_TYPE:
+							err('_setitem() must return void')
+
+					else:
+						if ret_type is UNSPECIFIED_INT:
+							if not dest_type.is_int():
+								err(f'Cannot assign an integer into '
+									f'variable {dest} of {dest_type}')
+						elif ret_type is not dest_type:
+							err(f'Cannot assign {ret_type} into '
 								f'variable {dest} of {dest_type}')
-					elif ret_type is not dest_type:
-						err(f'Cannot assign {ret_type} into '
-							f'variable {dest} of {dest_type}')
 
-					# IMPORTANT: Base assignment logic
+						# IMPORTANT: Base assignment logic
 
-					# the value of the expression is in rax
-					for inst in insts:
-						output(
-							inst.format(dest_reg=Register.c, aux_reg=Register.d)
-						)
+						# the value of the expression is in rax
+						for inst in insts:
+							output(
+								inst.format(dest_reg=Register.c, aux_reg=Register.d)
+							)
 
-					# print(f'Moving into {dest_clauses!r} using {insts}')
-					for dest_reg, dest_clause in zip(
-						standard_dest_regs,
-						dest_clauses,
-					):
-						output(
-							f'''mov {dest_clause.asm_str.format(
-								dest_reg=arg_regs[0], aux_reg=arg_regs[1]
-							)}, '''
-							f'{dest_reg:{dest_clause.size}}'
-						)
+						# print(f'Moving into {dest_clauses!r} using {insts}')
+						for dest_reg, dest_clause in zip(
+							standard_dest_regs,
+							dest_clauses,
+						):
+							output(
+								f'''mov {dest_clause.asm_str.format(
+									dest_reg=arg_regs[0], aux_reg=arg_regs[1]
+								)}, '''
+								f'{dest_reg:{dest_clause.size}}'
+							)
 
-			output()
+				output()
 
-	# which registers need to be preserved now?
-	if fn.name == 'main':
-		output(f'xor {arg_regs[0]:8}, {arg_regs[0]:8}')
-		output('call exit')
-	else:
-		output('mov rsp, rbp')
-		output('pop rbp')
-		output('ret')
+		# which registers need to be preserved now?
+		if fn.name == 'main':
+			output(f'xor {arg_regs[0]:8}, {arg_regs[0]:8}')
+			output('call exit')
+		else:
+			output('mov rsp, rbp')
+			output('pop rbp')
+			output('ret')
 
-	# print()
+		# print()
 
-output(r'''
-segment .data
-''')
+	output(r'''
+	segment .data
+	''')
 
-for string, label in strings.items():
-	encoded_string = repr(string)[2:-1].replace('`', '\\`')
-	output(f'{label}: db `{encoded_string}`, 0')
+	for string, label in strings.items():
+		encoded_string = repr(string)[2:-1].replace('`', '\\`')
+		output(f'{label}: db `{encoded_string}`, 0')
 
-Shared.out.close()
+	Shared.out.close()
 
-commands = []
+	commands = []
 
-if Shared.assemble:
-	commands.append(f"nasm \"{Shared.out.name}\" -f {Shared.arch.name} -o \"{file_name}.o\"")
+	if Shared.assemble:
+		commands.append(f"nasm \"{Shared.out.name}\" -f {Shared.arch.name} -o \"{file_name}.o\"")
 
-if Shared.link:
-	if Shared.debug:
-		linker = 'gcc-asm'
-	else:
-		linker = 'gcc'
+	if Shared.link:
+		if Shared.debug:
+			linker = 'gcc-asm'
+		else:
+			linker = 'gcc'
 
-	if Shared.arch is Arch.win64:
-		bin_extension = '.exe'
-	elif Shared.arch is Arch.elf64:
-		bin_extension = ''
-	else:
-		raise TypeError(f'Unsupported architecture {Shared.arch!r}')
+		if Shared.arch is Arch.win64:
+			bin_extension = '.exe'
+		elif Shared.arch is Arch.elf64:
+			bin_extension = ''
+		else:
+			raise TypeError(f'Unsupported architecture {Shared.arch!r}')
 
-	commands.append(
-		f'{linker} "{file_name}.o" -o "{file_name}{bin_extension}"'
+		commands.append(
+			f'{linker} "{file_name}.o" -o "{file_name}{bin_extension}"'
 
-		# NOTE: prone to injection
-		+ ''.join(f' -L{library}' for library in Shared.library_paths)
-		+ ''.join(f' -l{library}' for library in Shared.libraries)
-	)
+			# NOTE: prone to injection
+			+ ''.join(f' -L{library}' for library in Shared.library_paths)
+			+ ''.join(f' -l{library}' for library in Shared.libraries)
+		)
 
-if commands:
-	cmd = ' && '.join(commands)
-	print('running:\n', cmd)
-	result = system(cmd)
+	if commands:
+		cmd = ' && '.join(commands)
+		print('running:\n', cmd)
+		result = system(cmd)
