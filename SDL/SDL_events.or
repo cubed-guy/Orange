@@ -1,0 +1,139 @@
+import keyboard "./SDL_keyboard.or"
+
+type _EventSize
+	// 48 bytes
+	let _pad0 u64
+	let _pad1 u64
+	let _pad2 u64
+	let _pad3 u64
+	let _pad4 u64
+	let _pad5 u64
+
+	// 52 bytes
+	let _pad6 int
+end
+
+type Quit
+	let timestamp int
+end
+
+type Display
+	let timestamp int
+	let display int
+	let event char
+	let _pad0 char
+	let _pad1 char
+	let _pad2 char
+	let data int
+end
+
+type Window
+	let timestamp int
+	let windowID int
+	let event char
+	let _pad0 char
+	let _pad1 char
+	let _pad2 char
+	let data1 int
+	let data2 int
+end
+
+type Keyboard
+	let timestamp int
+	let windowID int
+	let state char
+	let repeat char
+	let _pad1 char
+	let _pad2 char
+	let keysym keyboard.Keysym
+end
+
+type MouseMotion
+	let timestamp int
+	let windowID int
+	let which int
+	let state int
+	let x int
+	let y int
+	let xrel int
+	let yrel int
+end
+
+type MouseButton
+	let timestamp int
+	let windowID int
+	let which int
+	let button char
+	let state char
+	let clicks char
+	let _pad0 char
+	let x int
+	let y int
+end
+
+type MouseWheel
+	let timestamp int
+	let windowID int
+	let which int
+	let x int
+	let y int
+	let direction int
+	let preciseX int  // float32 actually
+	let preciseY int  // float32 actually
+end
+
+enum Event
+	let   256 as quit Quit                     // < Quit request event data
+	let   306 as display Display               // < Display event data
+	let   512 as window Window                 // < Window event data
+	// let          syswm SysWM                   // < System dependent window event data
+
+	let   768 as keydown Keyboard              // < Keyboard event data
+	let          keyup Keyboard                // < Keyboard event data
+	// let          edit TextEditing              // < Text editing event data
+	// let          text TextInput                // < Text input event data
+	// let          keymapchange void             // < Extended text editing event data
+	// let          editExt TextEditingExt        // < Extended text editing event data
+
+	let  1024 as motion MouseMotion            // < Mouse motion event data
+	let          buttondown MouseButton        // < Mouse button event data
+	let          buttonup MouseButton          // < Mouse button event data
+	let          wheel MouseWheel              // < Mouse wheel event data
+
+	// let  1536 as jaxis JoyAxis                 // < Joystick axis event data
+	// let          jball JoyBall                 // < Joystick ball event data
+	// let          jhat JoyHat                   // < Joystick hat event data
+	// let          jbuttondown JoyButton         // < Joystick button event data
+	// let          jbuttonup JoyButton           // < Joystick button event data
+	// let          jdeviceadded JoyDevice        // < Joystick device change event data
+	// let          jdeviceremoved JoyDevice      // < Joystick device change event data
+	// let          jbattery JoyBattery           // < Joystick battery event data
+
+	// let  1616 as caxis ControllerAxis          // < Game Controller axis event data
+	// let          cbuttondown ControllerButton  // < Game Controller button event data
+	// let          cbuttonup ControllerButton    // < Game Controller button event data
+	// let          cdeviceadded ControllerDevice       // < Game Controller device event data
+	// let          cdeviceremoved ControllerDevice     // < Game Controller device event data
+	// let          cdeviceremapped ControllerDevice    // < Game Controller device event data
+	// let          ctouchpaddown ControllerTouchpad    // < Game Controller touchpad event data
+	// let          ctouchpadmotion ControllerTouchpad  // < Game Controller touchpad event data
+	// let          ctouchpadup ControllerTouchpad      // < Game Controller touchpad event data
+	// let          csensor ControllerSensor      // < Game Controller sensor event data
+
+	// let  1792 as tfingerdown TouchFinger       // < Touch finger event data
+	// let          tfingerup TouchFinger         // < Touch finger event data
+	// let          tfingermotion TouchFinger     // < Touch finger event data
+
+	// let  2048 as dgesture DollarGesture        // < Gesture event data
+	// let          drecord DollarGesture         // < Gesture event data
+	// let          mgesture MultiGesture         // < Gesture event data
+	// let          user User                     // < Custom event data
+	// let  4096 as drop Drop                     // < Drag and drop event data
+	// let  4352 as adeviceadded AudioDevice      // < Audio device event data
+	// let          adeviceremoved AudioDevice    // < Audio device event data
+	// let  4608 as sensor Sensor                 // < Sensor event data
+
+	let 16777216 as _field_size _EventSize             // < Force enum to 4 + 52 bytes
+end
+
+extern SDL_PollEvent: &Event event -> int

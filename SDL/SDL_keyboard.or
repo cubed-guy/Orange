@@ -1,0 +1,9 @@
+import scancode "./SDL_scancode.or"
+
+type Keysym
+	let scancode scancode.Scancode
+	let sym char
+	let mod int  // works if little-endian, 16-bit is required
+	let _pad0 char
+	let _pad1 char
+end

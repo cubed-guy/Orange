@@ -9,25 +9,59 @@ import surface "SDL_surface.or"
 import pixels  "SDL_pixels.or"
 import rect    "SDL_rect.or"
 
+import scancode  "SDL_scancode.or"
+import keyboard  "SDL_keyboard.or"
+import events  "SDL_events.or"
+
 enum InitFlags
-	const TIMER                1// 0x00000001u
-	const AUDIO               16// 0x00000010u
-	const VIDEO               32// 0x00000020u  // SDL_INIT_VIDEO implies SDL_INIT_EVENTS
-	const JOYSTICK           512// 0x00000200u  // SDL_INIT_JOYSTICK implies SDL_INIT_EVENTS
-	const HAPTIC            4096// 0x00001000u
-	const GAMECONTROLLER    8192// 0x00002000u  // SDL_INIT_GAMECONTROLLER implies SDL_INIT_JOYSTICK
-	const EVENTS           16384// 0x00004000u
-	const SENSOR           32768// 0x00008000u
-	const NOPARACHUTE    1048576// 0x00100000u  // compatibility; this flag is ignored.
+	let       1 as TIMER          void  // 0x00000001u
+	let      16 as AUDIO          void  // 0x00000010u
+	let      32 as VIDEO          void  // 0x00000020u  // SDL_INIT_VIDEO implies SDL_INIT_EVENTS
+	let     512 as JOYSTICK       void  // 0x00000200u  // SDL_INIT_JOYSTICK implies SDL_INIT_EVENTS
+	let    4096 as HAPTIC         void  // 0x00001000u
+	let    8192 as GAMECONTROLLER void  // 0x00002000u  // SDL_INIT_GAMECONTROLLER implies SDL_INIT_JOYSTICK
+	let   16384 as EVENTS         void  // 0x00004000u
+	let   32768 as SENSOR         void  // 0x00008000u
+	let 1048576 as NOPARACHUTE    void  // 0x00100000u  // compatibility; this flag is ignored.
 
 	// INIT_TIMER | INIT_AUDIO | INIT_VIDEO | INIT_EVENTS | INIT_JOYSTICK | INIT_HAPTIC | INIT_GAMECONTROLLER | INIT_SENSOR
-	const EVERYTHING 62001
+	let   62001 as EVERYTHING     void
 
-	let from int
+	let 16777216 as _field_id_size void
+
+	fn _print: InitFlags self
+		if self.TIMER
+			print("SDL.INIT_TIMER")
+		elif self.AUDIO
+			print("SDL.INIT_AUDIO")
+		elif self.VIDEO
+			print("SDL.INIT_VIDEO")
+		elif self.JOYSTICK
+			print("SDL.INIT_JOYSTICK")
+		elif self.HAPTIC
+			print("SDL.INIT_HAPTIC")
+		elif self.GAMECONTROLLER
+			print("SDL.INIT_GAMECONTROLLER")
+		elif self.EVENTS
+			print("SDL.INIT_EVENTS")
+		elif self.SENSOR
+			print("SDL.INIT_SENSOR")
+		elif self.NOPARACHUTE
+			print("SDL.INIT_NOPARACHUTE")
+
+		// INIT_TIMER | INIT_AUDIO | INIT_VIDEO | INIT_EVENTS | INIT_JOYSTICK | INIT_HAPTIC | INIT_GAMECONTROLLER | INIT_SENSOR
+		elif self.EVERYTHING
+			print("SDL.INIT_EVERYTHING")
+		else
+			print("SDL.UNKNOWN_INIT")
+		end
+
+	end
 end
 
 extern SDL_Init: InitFlags flags -> int
 extern SDL_InitSubSystem: InitFlags flags -> int
 extern SDL_QuitSubSystem: InitFlags flags
 extern SDL_WasInit: InitFlags flags -> int
+extern SDL_Delay: int ms
 extern SDL_Quit

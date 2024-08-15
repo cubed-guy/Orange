@@ -1,0 +1,293 @@
+enum Scancode
+	let UNKNOWN void
+
+	let 4 as A void
+	let      B void
+	let      C void
+	let      D void
+	let      E void
+	let      F void
+	let      G void
+	let      H void
+	let      I void
+	let      J void
+	let      K void
+	let      L void
+	let      M void
+	let      N void
+	let      O void
+	let      P void
+	let      Q void
+	let      R void
+	let      S void
+	let      T void
+	let      U void
+	let      V void
+	let      W void
+	let      X void
+	let      Y void
+	let      Z void
+
+	let 30 as DIGIT_1 void
+	let       DIGIT_2 void
+	let       DIGIT_3 void
+	let       DIGIT_4 void
+	let       DIGIT_5 void
+	let       DIGIT_6 void
+	let       DIGIT_7 void
+	let       DIGIT_8 void
+	let       DIGIT_9 void
+	let       DIGIT_0 void
+
+	let       RETURN void
+	let       ESCAPE void
+	let       BACKSPACE void
+	let       TAB void
+	let       SPACE void
+
+	let       MINUS void
+	let       EQUALS void
+	let       LEFTBRACKET void
+	let       RIGHTBRACKET void
+	let       BACKSLASH void
+
+	let       NONUSHASH void
+
+	let       SEMICOLON void
+	let       APOSTROPHE void
+	let       GRAVE void
+
+	let       COMMA void
+	let       PERIOD void
+	let       SLASH void
+
+	let       CAPSLOCK void
+
+	let       F1 void
+	let       F2 void
+	let       F3 void
+	let       F4 void
+	let       F5 void
+	let       F6 void
+	let       F7 void
+	let       F8 void
+	let       F9 void
+	let       F10 void
+	let       F11 void
+	let       F12 void
+
+	let       PRINTSCREEN void
+	let       SCROLLLOCK void
+	let       PAUSE void
+	let       INSERT void
+
+	let       HOME void
+	let       PAGEUP void
+	let       DELETE void
+	let       END void
+	let       PAGEDOWN void
+	let       RIGHT void
+	let       LEFT void
+	let       DOWN void
+	let       UP void
+
+	let       NUMLOCKCLEAR void
+
+	let       KP_DIVIDE void
+	let       KP_MULTIPLY void
+	let       KP_MINUS void
+	let       KP_PLUS void
+	let       KP_ENTER void
+	let       KP_1 void
+	let       KP_2 void
+	let       KP_3 void
+	let       KP_4 void
+	let       KP_5 void
+	let       KP_6 void
+	let       KP_7 void
+	let       KP_8 void
+	let       KP_9 void
+	let       KP_0 void
+	let       KP_PERIOD void
+
+	let       NONUSBACKSLASH void
+
+	let       APPLICATION void
+	let       POWER void
+
+	let       KP_EQUALS void
+	let       F13 void
+	let       F14 void
+	let       F15 void
+	let       F16 void
+	let       F17 void
+	let       F18 void
+	let       F19 void
+	let       F20 void
+	let       F21 void
+	let       F22 void
+	let       F23 void
+	let       F24 void
+	let       EXECUTE void
+	let       HELP void
+	let       MENU void
+	let       SELECT void
+	let       STOP void
+	let       AGAIN void
+	let       UNDO void
+	let       CUT void
+	let       COPY void
+	let       PASTE void
+	let       FIND void
+	let       MUTE void
+	let       VOLUMEUP void
+	let       VOLUMEDOWN void
+	// not sure whether theres a reason to enable these
+	// let 130 as LOCKINGCAPSLOCK void
+	// let 131 as LOCKINGNUMLOCK void
+	// let 132 as LOCKINGSCROLLLOCK void
+	let 133 as KP_COMMA void
+	let        KP_EQUALSAS400 void
+
+	let        INTERNATIONAL1 void
+
+	let        INTERNATIONAL2 void
+	let        INTERNATIONAL3 void // < Yen
+	let        INTERNATIONAL4 void
+	let        INTERNATIONAL5 void
+	let        INTERNATIONAL6 void
+	let        INTERNATIONAL7 void
+	let        INTERNATIONAL8 void
+	let        INTERNATIONAL9 void
+	let        LANG1 void // < Hangul/English toggle
+	let        LANG2 void // < Hanja conversion
+	let        LANG3 void // < Katakana
+	let        LANG4 void // < Hiragana
+	let        LANG5 void // < Zenkaku/Hankaku
+	let        LANG6 void // < reserved
+	let        LANG7 void // < reserved
+	let        LANG8 void // < reserved
+	let        LANG9 void // < reserved
+
+	let        ALTERASE void // < Erase-Eaze
+	let        SYSREQ void
+	let        CANCEL void
+	let        CLEAR void
+	let        PRIOR void
+	let        RETURN2 void
+	let        SEPARATOR void
+	let        OUT void
+	let        OPER void
+	let        CLEARAGAIN void
+	let        CRSEL void
+	let        EXSEL void
+
+	let 176 as KP_00 void
+	let        KP_000 void
+	let        THOUSANDSSEPARATOR void
+	let        DECIMALSEPARATOR void
+	let        CURRENCYUNIT void
+	let        CURRENCYSUBUNIT void
+	let        KP_LEFTPAREN void
+	let        KP_RIGHTPAREN void
+	let        KP_LEFTBRACE void
+	let        KP_RIGHTBRACE void
+	let        KP_TAB void
+	let        KP_BACKSPACE void
+	let        KP_A void
+	let        KP_B void
+	let        KP_C void
+	let        KP_D void
+	let        KP_E void
+	let        KP_F void
+	let        KP_XOR void
+	let        KP_POWER void
+	let        KP_PERCENT void
+	let        KP_LESS void
+	let        KP_GREATER void
+	let        KP_AMPERSAND void
+	let        KP_DBLAMPERSAND void
+	let        KP_VERTICALBAR void
+	let        KP_DBLVERTICALBAR void
+	let        KP_COLON void
+	let        KP_HASH void
+	let        KP_SPACE void
+	let        KP_AT void
+	let        KP_EXCLAM void
+	let        KP_MEMSTORE void
+	let        KP_MEMRECALL void
+	let        KP_MEMCLEAR void
+	let        KP_MEMADD void
+	let        KP_MEMSUBTRACT void
+	let        KP_MEMMULTIPLY void
+	let        KP_MEMDIVIDE void
+	let        KP_PLUSMINUS void
+	let        KP_CLEAR void
+	let        KP_CLEARENTRY void
+	let        KP_BINARY void
+	let        KP_OCTAL void
+	let        KP_DECIMAL void
+	let        KP_HEXADECIMAL void
+
+	let 224 as LCTRL void
+	let        LSHIFT void
+	let        LALT void // < alt, option
+	let        LGUI void // < windows, command (apple), meta
+	let        RCTRL void
+	let        RSHIFT void
+	let        RALT void //< alt gr, option
+	let        RGUI void //< windows, command (apple), meta
+
+	let 257 as MODE void    // < I'm not sure if this is really not covered
+                                //   by any of the above, but since there's a
+                                //   special KMOD_MODE for it I'm adding it here
+                                //
+
+	let        AUDIONEXT void
+	let        AUDIOPREV void
+	let        AUDIOSTOP void
+	let        AUDIOPLAY void
+	let        AUDIOMUTE void
+	let        MEDIASELECT void
+	let        WWW void
+	let        MAIL void
+	let        CALCULATOR void
+	let        COMPUTER void
+	let        AC_SEARCH void
+	let        AC_HOME void
+	let        AC_BACK void
+	let        AC_FORWARD void
+	let        AC_STOP void
+	let        AC_REFRESH void
+	let        AC_BOOKMARKS void
+
+	let        BRIGHTNESSDOWN void
+	let        BRIGHTNESSUP void
+	let        DISPLAYSWITCH void // < display mirroring/dual display
+	                                  //   switch, video mode switch
+	let        KBDILLUMTOGGLE void
+	let        KBDILLUMDOWN void
+	let        KBDILLUMUP void
+	let        EJECT void
+	let        SLEEP void
+
+	let        APP1 void
+	let        APP2 void
+
+	let        AUDIOREWIND void
+	let        AUDIOFASTFORWARD void
+
+	let        SOFTLEFT void     // < Usually situated below the display on phones and
+	                             //   used as a multi-function feature key for selecting
+	                             //   a software defined function shown on the bottom left
+	                             //   of the display.
+	let        SOFTRIGHT void    // < Usually situated below the display on phones and
+	                             //   used as a multi-function feature key for selecting
+	                             //   a software defined function shown on the bottom right
+	                             //   of the display.
+	let        CALL void    // < Used for accepting phone calls.
+	let        ENDCALL void // < Used for rejecting phone calls.
+
+	let 512 as SDL_NUM_SCANCODES void // < not a key, just marks the number of scancodes
+	                                  //   for array bounds
+end

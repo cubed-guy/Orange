@@ -837,14 +837,16 @@ fn sdl_tests
 	w = 1280
 	h =  720
 
-	if SDL.SDL_Init(SDL.InitFlags.from{SDL.InitFlags::VIDEO})
+	if SDL.SDL_Init(SDL.InitFlags.VIDEO{})
 		println("Could not initialise SDL")
 		return
 	end
 
 	println("SDL Initialised succesfully!")
 
-	println(SDL.InitFlags::VIDEO)
+	println(SDL.InitFlags.VIDEO{})
+	println(SDL.InitFlags.EVERYTHING{})
+	// println(SDL.InitFlags.EVERYTHING{}:type)  // TODO: fix parsing logic
 
 	let window &SDL.video.Window
 
@@ -894,16 +896,32 @@ fn sdl_tests
 	SDL.video.SDL_UpdateWindowSurface(window)
 
 	let m int
-	m = 150000
+	m = 1500000000
 	while m
-		println(m)
+		// println(m)
 		m = m-1
 	end
 
+	let running bool
+	running = bool.true{}
+
+	while running
+		let event SDL.events.Event
+		while SDL.events.SDL_PollEvent(&event)
+			if event.quit
+				println("Received quit event")
+				running = bool.false{}
+			end
+		end
+
+		SDL.SDL_Delay(16)
+	end
 end
 
 fn main
 	println("Hello, World!")
+	// println(3 - '+' + 5)  // TODO: need to fix parsing logic
+	// println(3 + '+')  // TODO: need to fix parsing logic
 
 	// basics()
 	// operations()
