@@ -831,6 +831,8 @@ end
 
 import SDL "SDL/SDL.or"
 
+extern fflush: &any file_ptr
+
 fn sdl_tests
 	let w int
 	let h int

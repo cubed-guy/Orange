@@ -1364,6 +1364,34 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			else:
 				clauses = (Clause(get_string_label(string, strings)),)
 			T = STR_TYPE
+		elif field == 'disc':
+			f_insts, clauses, exp_type = parse_token(exp, types,
+				variables=variables)
+			insts += f_insts
+
+			if addr is Address_modes.DEREF:
+				addr = Address_modes.NONE
+
+				if exp_type.deref is None:
+					err(f'{exp_type} cannot be dereferenced')
+				exp_type = exp_type.deref
+
+			if exp_type.deref is not None:
+				err('Implicit dereferencing not allowed for enum variant id')
+
+			if not exp_type.is_enum:
+				err(f"Meta field 'disc' expected an enum. {exp_type} is not an enum.")
+
+			size = get_discriminator_size(exp_type.last_field_id)
+			clause = clauses[0]
+
+			# TODO: `clause.deref` instead of `clauses`
+			if clause.size != size:
+				err(f'Cannot get discriminator for enum {T} with size {T.size}')
+
+			clauses = (clause,)
+
+			T = UNSPECIFIED_INT
 
 		elif field == 'name':
 			parse_type_result = parse_type(exp, types, variables=variables)
@@ -1727,6 +1755,9 @@ def eval_const(exp, types, *, variables) -> Const:
 			else:
 				val = get_string_label(string, strings)
 			T = STR_TYPE
+
+		elif field == 'disc':
+			err('Discriminator of an expression is not a constant')
 
 		elif field == 'name':
 			parse_type_result = parse_type(exp, types, variables=variables)
