@@ -895,15 +895,18 @@ fn sdl_tests
 
 	SDL.video.SDL_UpdateWindowSurface(window)
 
-	let m int
-	m = 1500000000
-	while m
-		// println(m)
-		m = m-1
-	end
+	// let m int
+	// m = 1500000000
+	// while m
+	// 	println(m)
+	// 	m = m-1
+	// end
 
 	let running bool
 	running = bool.true{}
+	println(SDL.keyboard.Keysym:size)
+	println(&kb_event)
+	println(&kb_event.keysym)
 
 	while running
 		let event SDL.events.Event
@@ -911,6 +914,19 @@ fn sdl_tests
 			if event.quit
 				println("Received quit event")
 				running = bool.false{}
+
+			elif event.keydown -> kb_event  // Too big
+				let kb_event SDL.events.Keyboard  // This works because there are no scopes
+				print("You pressed: ")
+				print(kb_event.keysym.sym)
+				print(" ")
+				println(kb_event.keysym.scancode:disc)
+				fflush(NULL)
+
+			// elif event.buttondown -> mb_event  // Too big
+			// 	let mb_event SDL.events.MouseButton  // This works because there are no scopes
+
+			// 	fflush(NULL)
 			end
 		end
 

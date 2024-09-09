@@ -20,14 +20,15 @@
 # DONE: import extern
 # DONE: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
 # DONE: exposed renaming support
-# TODO: explicit enum field ids
-# TODO: namespace aliasing
-# TODO: hex and bin literals
+# DONE: explicit enum field ids
+# TODO: Big enum variant checks
 # TODO: SDL bindings
 # TODO: enum consts
 # TODO: const operations
 # TODO: check non-void return
+# TODO: hex and bin literals
 # TODO: more unaries
+# TODO: namespace aliasing
 # TODO: big args
 # TODO: stack arguments
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
@@ -1079,7 +1080,7 @@ def size_prefix(size):
 def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeError]:
 	# DONE: add pointer support
 
-	# print(f'IN PARSETYPE: {type_str = }')
+	print(f'IN PARSETYPE: {type_str = }')
 	if type_str.startswith('&'):
 		type_str = type_str[1:].strip()
 		pointer = True
@@ -1283,10 +1284,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			o_insts, o_clauses, o_type = parse_token(r_operand, types,
 				variables=variables)
 
-			if len(o_clauses) != 1:
-				err('Operations are not supported for non-standard sizes')
+			# if len(o_clauses) != 1:
+			# 	err('Operations are not supported for non-standard sizes. '
+			# 		f'{o_type} has a size of {o_type.size} bytes. '
+			# 		f'({len(o_clauses)} clauses)')
 			if o_insts: err(f'Expression {token!r} is too complex')  # we do this to prevent overwriting registers
-			o_clause, = o_clauses
 			token = l_operand
 			break
 	else:
@@ -1438,6 +1440,10 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			field = field.strip()
 			# print(f'  {field = }')
+			if isinstance(T, Flag):
+				err('Accessing fields of an enum variant check '
+					'is not supported.')
+
 			if T is not STR_TYPE and T.deref is not None:
 				# We want to dereference T, so we first put it into a register
 				size = Type.get_size(T)  # always equal to PTR_SIZE
@@ -1458,20 +1464,19 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				discriminator_size = get_discriminator_size(T.last_field_id)
 
 				insts.append(
-					# crashed if you have more than 65536 fields
+					# crashes on non-standard field_sizes
 					f'cmp {size_prefix(discriminator_size)} '
 					f'[{base_reg} + {offset}], {var.field_id}'
 				)
 
 				T = Flag.e
-				offset += discriminator_size
 			else:
 				# for _name, _field in T.fields.items():
 					# print(' ', _name, _field.type)
 				# print(f'  {T}.fields[{field!r}]')
 				T = var.type
 
-				offset += var.offset
+			offset += var.offset
 			# print(f'  offset: {offset} ({var.offset = })')
 
 		base_addr = f'{base_reg} + {offset}'
@@ -1550,7 +1555,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		err(f'[INTERNAL ERROR] Type of token {token!r} not determined.')
 
 	if val is not None:
-		clauses = (Clause(f'{val}'),)
+		clauses = (Clause(f'{val}', size = Type.get_size(T)),)
 
 	if addr is Address_modes.DEREF:
 		if T.deref in (None, ANY_TYPE):
@@ -1592,18 +1597,33 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		ctrl_no = Ctrl.next()
 
+		print(f'Applying arrow from {clauses} to {o_clauses}')
+
 		insts += [
 			# preserves flag state
 
 			f'j{(~T).name} _U{ctrl_no}',
-			f'mov {{{dest_reg_fmts[0]}:{size}}}, '
-			f'{size_prefix(size)} [{base_reg} + {offset}]',
-
-			f'mov {o_clause.asm_str}, {{dest_reg:{size}}}',
+		]
+		clause_offset = offset
+		for clause_size, o_clause in zip(split_size(size), o_clauses):
+			insts += [
+				f'mov {{{dest_reg_fmts[0]}:{clause_size}}}, '
+				f'{size_prefix(clause_size)} [{base_reg} + {clause_offset}]',
+				f'mov {o_clause.asm_str}, {{{dest_reg_fmts[0]}:{clause_size}}}',
+			]
+			clause_offset += clause_size
+		insts += [
 			f'_U{ctrl_no}:',
 		]
 
 	elif operator is not None:
+		# Type check before codegen
+		if len(o_clauses) != 1:
+			err(f'Operators are not supported for non-standard sizes. '
+				f'({T} uses {T.size} bytes)')
+
+		T = operator_result_type(operator, T, o_type)
+		o_clause, = o_clauses
 
 		insts += [
 			# *o_insts,  # too complex if not empty
@@ -1615,7 +1635,6 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		]
 		clauses = ()
 		# print(f'OPERATOR {operator!r} using {T} and {o_type} ({addr = }) gives... ', end='')
-		T = operator_result_type(operator, T, o_type)
 		# print(T)
 	return insts, clauses, T
 
@@ -2213,7 +2232,10 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 	return ret_type
 
 def get_operator_insts(operator, operand_clause, operand_type):
-	# Should not muddle registers. So wee can't call functions.
+	print(f'{Shared.line_no}: OPERATION {operator} USING {operand_type} (size = {operand_clause.size})')
+	if Type.get_size(operand_type) != operand_clause.size:
+		err('[INTERNAL ERROR] clause and type size do not match')
+	# Should not muddle registers. So we can't call functions.
 
 	# I don't put any constraints. Makes it unsafe, but also flexible.
 	# We'll see if that's a good idea.
@@ -2226,6 +2248,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator in ('<', '>', '<=', '>='): inst = 'cmp'
 	elif operator in ('==', '!='):
 		# TODO: get_operator_insts() should take type of both operands
+
 		if operand_type is STR_TYPE:
 			return [
 				f'mov {arg_regs[0]:8}, {{dest_reg:8}}',

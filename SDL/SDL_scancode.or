@@ -290,4 +290,6 @@ enum Scancode
 
 	let 512 as SDL_NUM_SCANCODES void // < not a key, just marks the number of scancodes
 	                                  //   for array bounds
+
+	let 16777216 as _scancodesize void // < Set scancode size to 4 bytes
 end
