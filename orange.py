@@ -209,6 +209,48 @@ class Function_header:
 				err(f'Invalid syntax {" ".join(arg_entry)!r}. '
 					'Expected exactly 2 words for arg entry.')
 
+	@staticmethod
+	def parse(fn_qualname, arg_types, *, variables) -> tuple[Optional['Type'], 'Function_header']:
+		global curr_mod
+
+		if fn_qualname == 'alloc':
+			return None, ALLOC_FN
+
+		caller_type_name, dot, fn_name = fn_qualname.rpartition('.')
+
+		if dot:
+			parse_type_result = parse_type(caller_type_name, fn_types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {caller_type_name!r}, {parse_type_result}')
+			if len(parse_type_result) != 1:
+				err('Method calls expect exactly one type')
+			caller_type, = parse_type_result
+			# if caller_type.deref is not None:
+			# 	caller_type = caller_type.deref
+
+			# print('PARSED TYPE FOR METHOD:', caller_type)
+
+			# NOTE: Temp
+			if fn_name not in caller_type.methods:
+				# print(f'TYPE {caller_type} HAS NO SUCH METHOD {fn_name!r}')
+				# check for deref only if method doesn't exist
+				if caller_type.deref is not None:
+					caller_type = caller_type.deref
+					if fn_name not in caller_type.methods:
+						err(f'{caller_type} has no method named {fn_name!r}')
+				else:
+					err(f'{caller_type} has no method named {fn_name!r}')
+			fn_header = caller_type.methods[fn_name]
+			# print('METHOD  ', fn_name, fn_header)
+		elif fn_name not in curr_mod.methods:
+			err(f'No function named {fn_name!r}')
+		else:
+			fn_header = curr_mod.methods[fn_name]
+			# print('FUNCTION', fn_name, fn_header)
+			caller_type = None
+
+		return caller_type, fn_header
+
 	def __repr__(self):
 		return (
 			f'Function_header<{self.name!r} '
@@ -344,7 +386,7 @@ class Type:
 		in_module=false means assume this as the root namespace... sort of
 		'''
 
-		global core_module, fn_queue
+		global core_module, fn_queue, ALLOC_FN
 
 		# First pass, get the declarations
 
@@ -354,10 +396,10 @@ class Type:
 		curr_mod_path = os.getcwd()
 
 		if core_module is None:
-			alloc_fn = Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0)
-			alloc_fn.add_sub(())
+			ALLOC_FN = Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0)
+			ALLOC_FN.add_sub(())
 
-			out_mod.methods |= {'alloc': alloc_fn}
+			out_mod.methods |= {'alloc': ALLOC_FN}
 		else:
 			out_mod.methods = core_module.methods.copy()
 			out_mod.consts = core_module.consts.copy()
@@ -1078,9 +1120,6 @@ def size_prefix(size):
 	err(f'[Internal error] Invalid size {size} for getting size prefix')
 
 def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeError]:
-	# DONE: add pointer support
-
-	print(f'IN PARSETYPE: {type_str = }')
 	if type_str.startswith('&'):
 		type_str = type_str[1:].strip()
 		pointer = True
@@ -1613,7 +1652,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 	if operator == '->':  # this is not your typical operator
 		if var is None or not isinstance(T, Flag):
-			err("Expected an enum variant field before '->'")
+			err("Expected an enum variant before '->'")
 
 		if var.type is not o_type:
 			err(
@@ -1625,7 +1664,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		ctrl_no = Ctrl.next()
 
-		print(f'Applying arrow from {clauses} to {o_clauses}')
+		print(f'{Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
 
 		insts += [
 			# preserves flag state
@@ -1997,6 +2036,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 		else:
 			fn_name = '_getitem'
 
+		# First argument
 		insts, clauses, T = parse_token(exp[:idx].strip(), fn_types, variables=variables)
 		# print(f'Type of {exp[:idx]!r} is {T}')
 
@@ -2018,7 +2058,17 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 			)
 
 		arg_types = [T]
-		fn_name = f'{T.name}.{fn_name}'
+		if fn_name not in T.methods:
+			if T.deref is None or fn_name not in T.deref.methods:
+				err(f'{T} has no method {fn_name!r}')
+			T = T.deref
+
+		fn_header = T.methods[fn_name]
+		ret_type = call_function(
+			fn_header, arg_types, exp[idx:],
+			variables=variables, caller_type=T,
+		)
+
 	else:
 		fn_name = exp[:idx].strip()
 		if fn_name.startswith('*'):
@@ -2028,7 +2078,17 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 			fn_deref = False
 		arg_types = []
 
-	ret_type = call_function(fn_name, arg_types, exp[idx:], variables=variables)
+		T, fn_header = Function_header.parse(fn_name, arg_types, variables=variables)
+		ret_type = call_function(
+			fn_header, arg_types, exp[idx:],
+			variables=variables, caller_type=T,
+		)
+
+		if fn_deref:
+			if ret_type.deref is None:
+				err(f'Could not dereference {ret_type}')
+			ret_type = ret_type.deref
+			output(f'mov {Register.a:{ret_type.size}}, {size_prefix(ret_type.size)} [rax]')
 
 	# print(f'{dest_reg = }')
 	if dest_regs is Flag:
@@ -2045,10 +2105,8 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 # args_str must include the starting bracket
 # args_str = '(arg1, arg2)', but not 'arg, arg2)'
-def call_function(fn_qualname, arg_types, args_str, *, variables):
-	global curr_mod
-
-	if fn_qualname == 'alloc':
+def call_function(fn_header, arg_types, args_str, *, variables, caller_type = None):
+	if fn_header is ALLOC_FN:
 		alloc_type = None
 		alloc_fac  = None
 
@@ -2064,11 +2122,10 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 		idx = end
 		if not arg and idx == -1: break
 
-		if fn_qualname == 'alloc':
+		if fn_header is ALLOC_FN:
 			# doesn't work if only one argument is provided. Should work.
 			if alloc_type is None:
 				parse_type_result = parse_type(arg, fn_types, variables=variables)
-
 
 				if isinstance(parse_type_result, ParseTypeError):
 					err(f'In {arg!r}, {parse_type_result}')
@@ -2104,43 +2161,12 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 
 		arg_types.append(T)
 
-	if fn_qualname == 'alloc' and not arg_types:
-		arg_types.append(UNSPECIFIED_INT)
-		output(f'mov {arg_reg:8}, {alloc_fac}')
-
-	caller_type_name, dot, fn_name = fn_qualname.rpartition('.')
-
-	if dot:
-		parse_type_result = parse_type(caller_type_name, fn_types, variables=variables)
-		if isinstance(parse_type_result, ParseTypeError):
-			err(f'In {caller_type_name!r}, {parse_type_result}')
-		if len(parse_type_result) != 1:
-			err('Method calls expect exactly one type')
-		caller_type, = parse_type_result
-		# if caller_type.deref is not None:
-		# 	caller_type = caller_type.deref
-
-		# print('PARSED TYPE FOR METHOD:', caller_type)
-
-		# NOTE: Temp
-		if fn_name not in caller_type.methods:
-			# print(f'TYPE {caller_type} HAS NO SUCH METHOD {fn_name!r}')
-			# check for deref only if method doesn't exist
-			if caller_type.deref is not None:
-				caller_type = caller_type.deref
-				if fn_name not in caller_type.methods:
-					err(f'{caller_type} has no method named {fn_name!r}')
-			else:
-				err(f'{caller_type} has no method named {fn_name!r}')
-		fn_header = caller_type.methods[fn_name]
-		# print('METHOD  ', fn_name, fn_header)
-	elif fn_name not in curr_mod.methods:
-		err(f'No function named {fn_name!r}')
-	else:
-		fn_header = curr_mod.methods[fn_name]
-		# print('FUNCTION', fn_name, fn_header)
-		caller_type = None
-
+	if fn_header is ALLOC_FN:
+		if not arg_types:
+			arg_types.append(UNSPECIFIED_INT)
+			output(f'mov {arg_reg:8}, {alloc_fac}')
+		# return call_function_direct(fn_header, arg_types, variables=variables, caller_type=caller_type)
+		
 	# use fn_header.typeargs, fn_header.args
 	# We could store {typename: Type}, but rn we have {typename: typename}
 
@@ -2244,7 +2270,7 @@ def call_function(fn_qualname, arg_types, args_str, *, variables):
 
 	output('call', fn_instance.mangle())
 
-	if fn_qualname == 'alloc':
+	if fn_header is ALLOC_FN:
 		return alloc_type.pointer()
 
 	# print(f'{fn_header.ret_type = }')
@@ -2849,7 +2875,7 @@ if __name__ == '__main__':
 						second_arg = arg_regs[1]
 
 						if len(dest_clauses) != 1:
-							err("'[]=' does not support non-standard sizes yet")
+							err(f"Item assignment does not support non-standard sizes yet ({len(dest_clauses)} clauses)")
 
 						dest_clause, = dest_clauses
 
@@ -2876,7 +2902,16 @@ if __name__ == '__main__':
 						output(f'mov {second_arg:{ret_size}}, '
 							f'{Register.a:{ret_size}}')
 
-						setitem_result = call_function(f'{dest_type.name}._setitem',
+						if '_setitem' in dest_type.methods:
+							caller_type = dest_type
+						else:
+							caller_type = dest_type.deref
+							if caller_type is None or '_setitem' not in caller_type.methods:
+								err(f'{dest_type} does not support item assignment')
+
+						fn_header = caller_type.methods['_setitem']
+
+						setitem_result = call_function(fn_header,
 							[dest_type, ret_type], args_str,
 							variables=variables)
 
