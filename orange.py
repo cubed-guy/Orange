@@ -1437,13 +1437,23 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if isinstance(parse_type_result, ParseTypeError):
 				err(f'In {exp!r}, {parse_type_result}')
 			if len(parse_type_result) != 1:
-				# NOTE: I would 
 				err(f'{exp!r} does not correspond to a single type')
 			T, = parse_type_result
 
 			string = bytes(T.name, 'utf-8')
 			clauses = (Clause(get_string_label(string, strings)),)
 			T = STR_TYPE
+
+		elif field == 'null':
+			parse_type_result = parse_type(exp, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, {parse_type_result}')
+			if len(parse_type_result) != 1:
+				err(f'{exp!r} does not correspond to a single type')
+			T, = parse_type_result
+
+			clauses = (Clause('0'),)
+			T = T.pointer()
 
 		else:  # TODO: var:len
 			err(f'Unsupported metadata field {field!r} for token')
@@ -1803,13 +1813,23 @@ def eval_const(exp, types, *, variables) -> Const:
 			if isinstance(parse_type_result, ParseTypeError):
 				err(f'In {exp!r}, {parse_type_result}')
 			if len(parse_type_result) != 1:
-				# NOTE: I would 
 				err(f'{exp!r} does not correspond to a single type')
 			T, = parse_type_result
 
 			string = bytes(T.name, 'utf-8')
 			clause = get_string_label(string, strings)
 			T = STR_TYPE
+
+		elif field == 'null':
+			parse_type_result = parse_type(exp, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'In {exp!r}, {parse_type_result}')
+			if len(parse_type_result) != 1:
+				err(f'{exp!r} does not correspond to a single type')
+			T, = parse_type_result
+
+			clause = '0'
+			T = T.pointer()
 
 		else:  # TODO: var:len
 			err(f'Unsupported metadata field {field!r} for token')
@@ -2488,14 +2508,11 @@ if __name__ == '__main__':
 
 	STR_TYPE = builtin_types['str']
 	STR_TYPE.deref = CHAR_TYPE
+	STR_TYPE.consts['null'].type = STR_TYPE
 
 	# print('STR_TYPE size =', STR_TYPE.size)
 
 	builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
-
-	# Create NULL
-	NULL_CONST = core_module.consts['NULL']
-	NULL_CONST.type = ANY_TYPE.pointer()
 
 	Shared.infile = std_file
 	std_module = Type.read_module('_std', in_module=False)
@@ -2713,11 +2730,11 @@ if __name__ == '__main__':
 				if ret_type is UNSPECIFIED_INT:
 					if not expected_ret_type.is_int():
 						err('Mismatched type. '
-							f'{fn.name} expects {fn_types[fn.ret_type]}. '
+							f'{fn.name} expects {expected_ret_type}. '
 							f'Trying to return {ret_type}')
 				elif ret_type is not expected_ret_type:
 					err('Mismatched type. '
-						f'{fn.name} expects {fn_types[fn.ret_type]}. '
+						f'{fn.name} expects {expected_ret_type}. '
 						f'Trying to return {ret_type}')
 
 				if fn.name == 'main':

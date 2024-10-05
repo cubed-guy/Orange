@@ -9,8 +9,6 @@ type _Ptr T
 	end
 end
 
-const NULL 0
-
 type u64
 	// size = 8
 	extern printf: str fmt, u64 d
@@ -54,6 +52,8 @@ type void
 end
 
 type str
+	const null 0
+
 	let _ptr &char
 
 	extern printf: str fmt, str s -> u64

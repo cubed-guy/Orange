@@ -120,11 +120,10 @@ type Dict K V
 		out.values._ptr = alloc(V, cap)
 		out.used = 0
 
-
 		let i int
 		i = 0
 		while i < cap
-			out.keys[i] = 0
+			out.keys[i] = str::null
 			out.values[i] = 0
 			i = i + 1
 		end
@@ -181,12 +180,12 @@ type Dict K V
 		let index int
 		index = Dict K V.index(self, key)
 		if index < 0
-			return 0
+			return V:null
 		end
 
 		key = self.keys[index]
 		if key == 0
-			return 0
+			return V:null
 		end
 
 		return &self.values[index]

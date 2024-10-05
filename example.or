@@ -306,7 +306,10 @@ fn linked_lists
 		tail.data = i
 		i = i + 1
 	end
-	tail.next = head  // TODO: Figure out NULL, probably Option &Node T
+	// tail.next = head  // TODO: Figure out NULL, probably Option &Node T
+
+	// "Option &" would be good, but it'll need to be specially optimised.
+	tail.next = Int_node:null  // We'll do this for now.
 
 	let node &Int_node
 	node = head
@@ -810,7 +813,7 @@ fn enums
 
 	let ip IP
 
-	ip = IP.v6{"192.168.191.9"}
+	ip = IP.v4{"192.168.191.9"}
 	// ip = IP.v6{"ff89::a:0:15ef"}
 	// ip = IP.sneaky_sneak{}
 
@@ -876,15 +879,10 @@ fn sdl_tests
 
 	println("GOT DISPLAY")
 
-	let rect_null &SDL.rect.Rect
-	let dummy_offset int
-	dummy_offset = rect_null - NULL
-	rect_null = rect_null - dummy_offset
-
 	let colour int
 	colour = SDL.pixels.SDL_MapRGB(display.format, 34, 34, 34)
 
-	SDL.surface.SDL_FillRect(display, rect_null, colour)
+	SDL.surface.SDL_FillRect(display, SDL.rect.Rect:null, colour)
 
 	let new_rect SDL.rect.Rect
 	new_rect.x = 100
@@ -923,7 +921,7 @@ fn sdl_tests
 				print(kb_event.keysym.sym)
 				print(" ")
 				println(kb_event.keysym.scancode:disc)
-				fflush(NULL)
+				fflush(any:null)
 
 			// elif event.buttondown -> mb_event  // Too big
 			// 	let mb_event SDL.events.MouseButton  // This works because there are no scopes
@@ -934,6 +932,8 @@ fn sdl_tests
 
 		SDL.SDL_Delay(16)
 	end
+
+	SDL.video.SDL_DestroyWindow(window)
 end
 
 fn main
@@ -941,28 +941,29 @@ fn main
 	// println(3 - '+' + 5)  // TODO: need to fix parsing logic
 	// println(3 + '+')  // TODO: need to fix parsing logic
 
-	// basics()
-	// operations()
-	// control_flow()
-	// pointers()
-	// alloc_stuff()
-	// linked_lists()
-	// polymorphic_structs()
-	// classmethods()
-	// array_index()
-	// // dictionaries()
-	// streq_tests()
-	// mul_tests()
-	// more_meta()
-	// // scanf_test()
-	// passing_args()
-	// nested_types()
-	// imports()
-	// generic_prints()
-	// constants()
-	// big_moves()
-	// enums()
-	sdl_tests()
+	basics()
+	operations()
+	control_flow()
+	pointers()
+	alloc_stuff()
+	linked_lists()
+	polymorphic_structs()
+	classmethods()
+	array_index()
+	dictionaries()
+	streq_tests()
+	mul_tests()
+	more_meta()
+	// scanf_test()
+	passing_args()
+	nested_types()
+	imports()
+	generic_prints()
+	constants()
+	big_moves()
+	enums()
+	// sdl_tests()
+	// snake.snake_game()
 
 	// println("HI")
 
