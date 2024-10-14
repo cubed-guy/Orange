@@ -123,6 +123,9 @@ fn operations
 
 	puts("Hello, World!" + 3)
 	puts(3 + "Hello, World!")
+
+	// println(3 - '+' + 5)  // TODO: need to fix parsing logic
+	// println(3 + '+')  // TODO: need to fix parsing logic
 end
 
 fn control_flow
@@ -653,7 +656,7 @@ end
 
 fn nested_types
 	let nest_instance Nested &Node char
-	// Nested &Node char.call_inner(&nest_instance)
+	Nested &Node char.call_inner(&nest_instance)
 
 	let new1 &X int char
 	// let new2 &X int char
@@ -936,10 +939,10 @@ fn sdl_tests
 	SDL.video.SDL_DestroyWindow(window)
 end
 
+import snake "snake_game.or"
+
 fn main
 	println("Hello, World!")
-	// println(3 - '+' + 5)  // TODO: need to fix parsing logic
-	// println(3 + '+')  // TODO: need to fix parsing logic
 
 	basics()
 	operations()
@@ -962,12 +965,9 @@ fn main
 	constants()
 	big_moves()
 	enums()
+
 	// sdl_tests()
-	// snake.snake_game()
-
-	// println("HI")
-
-	// exit(23)
+	snake.snake_game()
 
 	SDL.SDL_Quit()
 end

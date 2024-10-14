@@ -26,3 +26,6 @@ test_many(testee.Patterns.alias_through_strings, [
 
 for i in range(0, 64, 8):
 	print(1<<i, '->', testee.get_discriminator_size(1<<i))
+
+for i in range(1, 33):
+	print(i, '->', testee.split_size(i))

@@ -1,0 +1,298 @@
+import SDL "SDL/SDL.or"
+extern fflush: &any file_ptr
+
+type Point T
+	let x T
+	let y T
+
+	fn new: T x, T y -> Point T
+		let out Point T
+		out.x = x
+		out.y = y
+		return out
+	end
+end
+
+enum Dir
+	let north void
+	let south void
+	let east  void
+	let west  void
+end
+
+fn reset_snake T: &Arr Point T snake, &Point T fruit
+	let head &Point T
+	head = &snake[0]
+	head.x = 0
+	head.y = 0
+	snake.len = 1
+	new_fruit(snake, fruit)
+end
+
+fn update_snake T: &Arr Point T snake, Dir snake_dir, &Point T fruit -> bool
+	let i int
+	i = snake.len
+	let head Point T
+	head = snake[0]
+
+	let next Point T
+	if   snake_dir.north
+		next = Point T.new(head.x, head.y-1)
+		if 0 > next.y
+			next.y = ROWS-1
+		end
+	elif snake_dir.south
+		next = Point T.new(head.x, head.y+1)
+		if ROWS <= next.y
+			next.y = 0
+		end
+	elif snake_dir.east
+		next = Point T.new(head.x+1, head.y)
+		if COLS <= next.x
+			next.x = 0
+		end
+	elif snake_dir.west
+		next = Point T.new(head.x-1, head.y)
+		if 0 > next.x
+			next.x = COLS-1
+		end
+	end
+
+	if collision(snake, next.x, next.y)
+		println("GAME OVER")
+		fflush(any:null)
+		return bool.true{}
+	end
+
+	if fruit.x == next.x
+	if fruit.y == next.y
+		new_fruit(snake, fruit)
+		snake[i] = snake[i-1]
+		snake.len = snake.len + 1
+		println(snake.len)
+		fflush(any:null)
+	end
+	end
+
+	i = i-1
+
+	while 0 < i
+		snake[i] = snake[i-1]
+		i = i-1
+	end
+
+	snake[0] = next
+
+	return bool.false{}
+end
+
+const CELL_SIZE 30
+
+fn show_snake: &SDL.surface.Surface display, &SDL.video.Window window, &Arr Point int snake, &Point int fruit
+	let colour int
+	colour = SDL.pixels.SDL_MapRGB(display.format, 34, 34, 34)
+	SDL.surface.SDL_FillRect(display, SDL.rect.Rect:null, colour)
+
+	let new_rect SDL.rect.Rect
+	new_rect.x = fruit.x * CELL_SIZE
+	new_rect.y = fruit.y * CELL_SIZE
+	new_rect.w = CELL_SIZE
+	new_rect.h = CELL_SIZE
+
+	colour = SDL.pixels.SDL_MapRGB(display.format, 136, 255, 144)
+	SDL.surface.SDL_FillRect(display, &new_rect, colour)
+
+	let i int
+	i = snake.len-1
+
+	// println(0:type)  // TODO: Catch this error. Don't allow Type<UNSPECIFIED> to be accessible.
+
+	while 0 <= i  // this would work because it will compare dwords
+		let cell Point int
+		cell = snake[i]
+
+		new_rect.x = cell.x * CELL_SIZE
+		new_rect.y = cell.y * CELL_SIZE
+		new_rect.w = CELL_SIZE
+		new_rect.h = CELL_SIZE
+
+		colour = SDL.pixels.SDL_MapRGB(display.format, 255, 144, 136)
+		SDL.surface.SDL_FillRect(display, &new_rect, colour)
+
+		i = i-1
+	end
+
+	SDL.video.SDL_UpdateWindowSurface(window)
+end
+
+extern srand: int seed
+extern rand -> int
+extern time: &int ret_addr -> int
+
+const ROWS 25
+const COLS 25
+
+fn collision: &Arr Point int snake, int x, int y -> bool
+	let i int
+	i = 0
+	while snake.len > i
+		let part &Point int
+		part = &snake[i]
+		if part.x == x
+			if part.y == y
+				return bool.true{}
+			end
+		end
+		i = i+1
+	end
+	return bool.false{}
+end
+
+fn new_fruit: &Arr Point int snake, &Point int fruit
+	let n int
+
+	while 1
+		let x int
+		x = rand()
+		n = COLS
+		x = x % n
+
+		let y int
+		y = rand()
+		n = ROWS
+		y = y % n
+
+		if collision(snake, x, y)
+			continue
+		end
+		break
+	end
+
+	fruit.x = x
+	fruit.y = y
+end
+
+fn snake_game
+	let window &SDL.video.Window
+
+	let window_params SDL.video.WindowParams
+
+	window_params.title = "Snake Game in Orange!"
+	window_params.x = 400
+	window_params.y = SDL.video.Window::POS_UNDEFINED
+	window_params.w = COLS * CELL_SIZE
+	window_params.h = ROWS * CELL_SIZE
+	window_params.flags = SDL.video.WindowFlags.from{SDL.video.Window::SHOWN}
+
+	println("STARTING SNAKE WINDOW")
+
+	window = SDL.video.SDL_CreateWindowFromStruct(&window_params)
+	if window == 0
+		println("Could not initialise sdl window")
+		return
+	end
+
+	let display &SDL.surface.Surface
+	display = SDL.video.SDL_GetWindowSurface(window)
+
+	println("GOT DISPLAY")
+
+	let snake Arr Point int
+	snake:type.alloc(&snake, ROWS*COLS)
+
+	let snake_ref &Arr Point int
+	snake_ref = &snake
+
+	let head_ref &Point int
+	head_ref = &snake_ref[0]
+	*head_ref = Point int.new(0, 0)
+	snake.len = 1
+
+	let now int
+	now = time(int:null)
+
+	let fruit Point int
+	srand(now)
+	// srand(1728901247)
+	// print("Seed = ")
+	new_fruit(&snake, &fruit)
+	fflush(any:null)
+
+	let snake_dir Dir
+	snake_dir = Dir.south{}
+
+	let running bool
+	running = bool.true{}
+	// println(SDL.keyboard.Keysym:size)
+	// println(&kb_event)
+	// println(&kb_event.keysym)
+
+	while running
+		let next_dir Dir
+		next_dir = snake_dir
+
+		let event SDL.events.Event
+		while SDL.events.SDL_PollEvent(&event)
+			if event.quit
+				println("Received quit event")
+				running = bool.false{}
+
+			elif event.keydown -> kb_event  // Too big
+				let kb_event SDL.events.Keyboard  // This works because there are no scopes
+				// print("You pressed: ")
+				// print(kb_event.keysym.sym)
+				// print(" ")
+				// println(kb_event.keysym.scancode:disc)
+				if kb_event.keysym.scancode.UP
+					if snake_dir.east
+						next_dir = Dir.north{}
+					elif snake_dir.west
+						next_dir = Dir.north{}
+					end
+				elif kb_event.keysym.scancode.DOWN
+					if snake_dir.east
+						next_dir = Dir.south{}
+					elif snake_dir.west
+						next_dir = Dir.south{}
+					end
+				elif kb_event.keysym.scancode.LEFT
+					if snake_dir.north
+						next_dir = Dir.west{}
+					elif snake_dir.south
+						next_dir = Dir.west{}
+					end
+				elif kb_event.keysym.scancode.RIGHT
+					if snake_dir.north
+						next_dir = Dir.east{}
+					elif snake_dir.south
+						next_dir = Dir.east{}
+					end
+				elif kb_event.keysym.scancode.ESCAPE
+					running = bool.false{}
+				end
+				fflush(any:null)
+
+			// elif event.buttondown -> mb_event  // Too big
+			// 	let mb_event SDL.events.MouseButton  // This works because there are no scopes
+				
+			// 	fflush(NULL)
+			end
+		end
+
+		snake_dir = next_dir
+
+		let reset bool
+		reset = update_snake(&snake, snake_dir, &fruit)
+		if reset.true
+			reset_snake(snake_ref, &fruit)
+			snake_dir = Dir.south{}
+		end
+		show_snake(display, window, &snake, &fruit)
+		SDL.SDL_Delay(200)  // 200 ms per tick
+	end
+end
+
+fn main
+	snake_game()
+end
+// export SDL_main main

@@ -30,7 +30,7 @@ enum WindowFlags
 end
 
 // Structure used internally by SDL. API users must use it only as a reference.
-// Making it a variantless enum makes it UNDEREFERENCABLE!
+// Making it a variantless enum makes it UNDEREFERENCABLE! (for the most part)
 enum Window
 	const POS_UNDEFINED 536805376// 0x1FFF0000u
 	const POS_CENTERED  805240832// 0x2FFF0000u

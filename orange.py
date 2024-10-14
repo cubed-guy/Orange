@@ -21,7 +21,8 @@
 # DONE: rename UNSPECIFIED_TYPE -> UNSPECIFIED_INT
 # DONE: exposed renaming support
 # DONE: explicit enum field ids
-# TODO: Big enum variant checks
+# DONE: Big enum variant checks
+# TODO: correct operator types with UNSPECIFIED_INT
 # TODO: SDL bindings
 # TODO: enum consts
 # TODO: const operations
@@ -2172,7 +2173,8 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 
 		if len(clauses) > 1:
 			err(
-				f'[Internal Error] Only register sized arguments are supported.'
+				'[Internal Error] Only register sized arguments are supported. '
+				f'({arg!r} has a size of {Type.get_size(T)})'
 			)
 		elif clauses:
 			clause, = clauses
@@ -2755,10 +2757,9 @@ if __name__ == '__main__':
 					dest_regs = Flag, fn_queue = fn_queue,
 					variables = variables
 				)
-
-				if ret_flag is Flag.ALWAYS:
+				if ret_flag is Flag.NEVER:
 					output(f'jmp _E{ctrl_no}')
-				elif ret_flag is not Flag.NEVER:
+				elif ret_flag is not Flag.ALWAYS:
 					output(f'j{(~ret_flag).name} _E{ctrl_no}')
 
 			elif match[1] == 'if':
@@ -2772,9 +2773,9 @@ if __name__ == '__main__':
 					variables = variables
 				)
 
-				if ret_flag is Flag.ALWAYS:
+				if ret_flag is Flag.NEVER:
 					output(f'jmp _E{ctrl_no}_1')
-				elif ret_flag is not Flag.NEVER:
+				elif ret_flag is not Flag.ALWAYS:
 					output(f'j{(~ret_flag).name} _E{ctrl_no}_1')
 
 			elif match[1] == 'elif':
@@ -2795,9 +2796,9 @@ if __name__ == '__main__':
 					variables = variables
 				)
 
-				if ret_flag is Flag.ALWAYS:
+				if ret_flag is Flag.NEVER:
 					output(f'jmp _E{ctrl.ctrl_no}_{ctrl.branch+1}')
-				elif ret_flag is not Flag.NEVER:
+				elif ret_flag is not Flag.ALWAYS:
 					output(f'j{(~ret_flag).name} _E{ctrl.ctrl_no}_{ctrl.branch+1}')
 
 			elif match[1] == 'else':
