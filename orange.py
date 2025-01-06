@@ -380,10 +380,15 @@ class Type:
 			err(f'[Internal Error] Invalid type {T.__class__} for type')
 		return T.size
 
-
 	@classmethod
 	def read_module(cls, name, *, args=(), in_module=True):
+		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
+		out_mod.read(in_module=in_module)
+		return out_mod
+
+	def read(self, *, in_module=True):
 		'''
+		Reads Shared.infile as a module definition
 		in_module=false means assume this as the root namespace... sort of
 		'''
 
@@ -391,26 +396,25 @@ class Type:
 
 		# First pass, get the declarations
 
-		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
-		print(f'Start module {Shared.infile.name!r} {out_mod.name}')
+		print(f'Start module {Shared.infile.name!r} {self.name}')
 
 		curr_mod_path = os.getcwd()
 
 		if core_module is None:
-			ALLOC_FN = Function_header('alloc', (), (('int', 'n'),), '', out_mod, 0, 0)
+			ALLOC_FN = Function_header('alloc', (), (('int', 'n'),), '', self, 0, 0)
 			ALLOC_FN.add_sub(())
 
-			out_mod.methods |= {'alloc': ALLOC_FN}
+			self.methods |= {'alloc': ALLOC_FN}
 		else:
-			out_mod.methods = core_module.methods.copy()
-			out_mod.consts = core_module.consts.copy()
-			out_mod.children = builtin_types.copy()
+			self.methods = core_module.methods.copy()
+			self.consts = core_module.consts.copy()
+			self.children = builtin_types.copy()
 
-			# print('Inherited core types:', out_mod.children)
+			# print('Inherited core types:', self.children)
 
-		curr_type_dict = out_mod.children
+		curr_type_dict = self.children
 
-		curr_type = out_mod
+		curr_type = self
 		type_stack = []
 
 		in_function = False
@@ -436,7 +440,7 @@ class Type:
 
 				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
-				if in_module or curr_type is not out_mod:
+				if in_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -474,7 +478,7 @@ class Type:
 
 				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
-				if in_module or curr_type is not out_mod:
+				if in_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -514,15 +518,15 @@ class Type:
 					fn, = fn_split
 					type_str = ''
 
-				if fn not in out_mod.methods:
-					err(f'Function {fn!r} is not defined in {out_mod}. '
+				if fn not in self.methods:
+					err(f'Function {fn!r} is not defined in {self}. '
 						'Cannot export.')
 
-				args = parse_type(type_str, out_mod.children, variables=out_mod.consts)
+				args = parse_type(type_str, self.children, variables=self.consts)
 				if isinstance(args, ParseTypeError):
 					err(f'[in {type_str.lstrip()!r}] {args}')
 
-				header = out_mod.methods[fn]
+				header = self.methods[fn]
 				if header.isextern:
 					err(f'Cannot export extern function {header}')
 
@@ -573,7 +577,7 @@ class Type:
 
 				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
-				if in_module or curr_type is not out_mod:
+				if in_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -584,16 +588,17 @@ class Type:
 					# (Does not account for symbolic links)
 					module = Shared.imports[mod_path]
 				else:
+					# Reserve spot in dict to avoid recursion
+					module = Type(qual_name, size=None, args=curr_type.args)
+					Shared.imports[mod_path] = module
+
 					module_file = open(mod_path.decode('utf-8'))
 					infile = Shared.infile
 					Shared.infile = module_file
 					os.chdir(os.path.dirname(mod_path))
-					module = Type.read_module(
-						qual_name, args = curr_type.args
-					)
+					module.read()
 					os.chdir(curr_mod_path)
 					Shared.infile = infile
-					Shared.imports[mod_path] = module
 
 				curr_type_dict[name] = module
 				# print('NEW MODULE', module)
@@ -619,7 +624,7 @@ class Type:
 				if name in curr_type.methods:
 					err(f'Function {name!r} already defined.')
 
-				if in_module or curr_type is not out_mod:
+				if in_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -627,7 +632,7 @@ class Type:
 				fn = Function_header(
 					qual_name, (*typeargs, *curr_type.args),
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-					ret_type, out_mod, tell, Shared.line_no, Shared.infile
+					ret_type, self, tell, Shared.line_no, Shared.infile
 				)
 				# print(f'FUNCTION {name}')
 				curr_type.methods[name] = fn
@@ -657,7 +662,7 @@ class Type:
 				if name in curr_type.methods:
 					err(f'Function {name!r} already defined.')
 
-				if in_module or curr_type is not out_mod:
+				if in_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -665,7 +670,7 @@ class Type:
 				fn = Function_header(
 					qual_name, (*typeargs, *curr_type.args),
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
-					ret_type, out_mod, None, Shared.line_no, Shared.infile,
+					ret_type, self, None, Shared.line_no, Shared.infile,
 					isextern = True
 				)
 				# print(f'EXTERN   {name}')
@@ -691,7 +696,7 @@ class Type:
 							f'line {var.decl_line_no}')
 
 					parse_type_result = parse_type(
-						T, out_mod.children,
+						T, self.children,
 						variables=curr_type.fields
 					)
 
@@ -715,7 +720,7 @@ class Type:
 							err('Field alias is allowed only for enums types. '
 								f'{curr_type} is a struct.')
 
-						field_id = eval_const(field_id, types=types, variables=out_mod.consts)
+						field_id = eval_const(field_id, types=types, variables=self.consts)
 						if not field_id.type.is_int():
 							err('Enum field alias expected an integer. '
 								f'Got {field_id.type}.')
@@ -795,7 +800,7 @@ class Type:
 					print(f'{curr_type} has a size of {curr_type.size}')
 
 					if type_stack: curr_type = type_stack[-1]
-					else: curr_type = out_mod
+					else: curr_type = self
 
 					curr_type_dict = curr_type.children
 
@@ -817,10 +822,7 @@ class Type:
 				# else:
 				# 	print(f'[P1] Exit construct')
 
-		print('End module', out_mod.name)
-
-		return out_mod
-
+		print('End module', self.name)
 
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		global types
