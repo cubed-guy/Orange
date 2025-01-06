@@ -2538,12 +2538,16 @@ if __name__ == '__main__':
 		err("No definition of function 'main' found.")
 
 	main_header = main_module.methods['main']
+
 	if () in main_header.instances:
 		fn_instance = main_header.instances[()]
 	else:
 		output('global main')
 		fn_queue.append((main_header, ()))
 		fn_instance = main_header.add_sub(())
+
+	if fn_instance.export_name is None:
+		fn_instance.export_name = 'main'
 
 	strings = {}
 
