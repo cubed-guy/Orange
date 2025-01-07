@@ -396,7 +396,7 @@ class Type:
 
 		# First pass, get the declarations
 
-		print(f'Start module {Shared.infile.name!r} {self.name}')
+		print(f'Reading module {self.name} at {Shared.infile.name!r}')
 
 		curr_mod_path = os.getcwd()
 
@@ -487,7 +487,7 @@ class Type:
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				print('NEW TYPE', curr_type)
+				# print('NEW TYPE', curr_type)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -707,8 +707,8 @@ class Type:
 								f'{len(parse_type_result)} types.')
 						T, = parse_type_result
 						# print('GOT REAL TYPE', T)
-					else:
-						print(f'{T.strip()!r} is not defined.')
+					# else:
+					# 	print(f'{T.strip()!r} is not defined.')
 
 					if curr_type.is_enum:
 						offset = 0
@@ -745,10 +745,10 @@ class Type:
 						elif T.size is None:
 							err(f'{T} is polymorphic. Cannot instantiate it without type arguments.')
 						else:
-							print(f'{curr_type}: adding {T} (size = {T.size})')
+							# print(f'{curr_type}: adding field {name} ({T}) (size = {T.size})')
 							curr_type.size += T.size
 					# else:
-						# print('curr_type.size:', 'Size is already None')
+					# 	print('curr_type.size:', 'Size is already None')
 
 				elif match[1] == 'const':
 					# print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
@@ -779,7 +779,7 @@ class Type:
 						if curr_type.size is None:
 							err('Polymorphic enums are not yet supported.')
 
-						print('Getting discr size of', curr_type)
+						# print('Getting discr size of', curr_type)
 						if curr_type.last_field_id is not None:
 							curr_type.last_field_id = max(
 								field.field_id
@@ -793,11 +793,11 @@ class Type:
 							for field in curr_type.fields.values():
 								field.offset += discriminator_size
 
-						print('END ENUM', curr_type)
-					else:
-						print('END TYPE', curr_type)
+					# 	print('END ENUM', curr_type)
+					# else:
+					# 	print('END TYPE', curr_type)
 
-					print(f'{curr_type} has a size of {curr_type.size}')
+					# print(f'{curr_type} has a size of {curr_type.size}')
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = self
@@ -822,7 +822,7 @@ class Type:
 				# else:
 				# 	print(f'[P1] Exit construct')
 
-		print('End module', self.name)
+		# print('End module', self.name)
 
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		global types
@@ -2528,7 +2528,7 @@ if __name__ == '__main__':
 	main_dir = os.path.dirname(os.path.abspath(argv[1]))
 	os.chdir(main_dir)
 
-	print()
+	# print()
 
 	fn_queue = []
 
@@ -3022,5 +3022,5 @@ if __name__ == '__main__':
 
 	if commands:
 		cmd = ' && '.join(commands)
-		print('running:\n', cmd)
+		# print('running:\n', cmd)
 		result = system(cmd)
