@@ -351,7 +351,7 @@ MISSING = type('MISSING', (), {
 })()
 
 class Type:
-	def __init__(self, name, size = 0, args = (), is_enum = False):
+	def __init__(self, name, module, size = 0, args = (), is_enum = False):
 		self.name = name
 		self.size = size
 		self.args = args
@@ -359,6 +359,9 @@ class Type:
 		self.deref = None
 		self.ref = None
 		self.parent = self
+
+		if module is None: module = self
+		self.module = module
 
 		self.children = {}   # nested types
 		self.methods = {}
@@ -381,26 +384,26 @@ class Type:
 		return T.size
 
 	@classmethod
-	def read_module(cls, name, *, args=(), in_module=True):
-		out_mod = cls(name, size=None, args=args)  # modules cannot be instantiated
-		out_mod.read(in_module=in_module)
+	def read_module(cls, name, *, args=(), sub_module=True):
+		out_mod = cls(name, module=None, size=None, args=args)  # modules cannot be instantiated
+		out_mod.read(sub_module=sub_module)
 		return out_mod
 
-	def read(self, *, in_module=True):
+	def read(self, *, sub_module=True):
 		'''
 		Reads Shared.infile as a module definition
-		in_module=false means assume this as the root namespace... sort of
+		sub_module=false means assume this as the root namespace... sort of
 		'''
 
 		global core_module, fn_queue, ALLOC_FN
 
 		# First pass, get the declarations
 
-		print(f'Reading module {self.name} at {Shared.infile.name!r}')
+		print(f'MOD      {self.name} at {Shared.infile.name!r}')
 
 		curr_mod_path = os.getcwd()
 
-		if core_module is None:
+		if self is core_module:
 			ALLOC_FN = Function_header('alloc', (), (('int', 'n'),), '', self, 0, 0)
 			ALLOC_FN.add_sub(())
 
@@ -440,16 +443,16 @@ class Type:
 
 				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
-				if in_module or curr_type is not self:
+				if sub_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
 
-				curr_type = Type(qual_name, args = curr_type.args + tuple(args), is_enum = True)
+				curr_type = Type(qual_name, module = self, args = curr_type.args + tuple(args), is_enum = True)
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				# print('NEW ENUM', curr_type)
+				print('ENUM    ', curr_type.name)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -478,16 +481,16 @@ class Type:
 
 				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
-				if in_module or curr_type is not self:
+				if sub_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
 				
-				curr_type = Type(qual_name, args = curr_type.args + tuple(args))
+				curr_type = Type(qual_name, module = self, args = curr_type.args + tuple(args))
 
 				type_stack.append(curr_type)
 				curr_type_dict[name] = curr_type
-				# print('NEW TYPE', curr_type)
+				print('TYPE    ', curr_type.name)
 				curr_type_dict = curr_type.children
 
 				# scope_level += 1  # scope level goes up and down only if in_function
@@ -577,7 +580,7 @@ class Type:
 
 				if name in curr_type_dict: err(f'Type {name!r} already defined')
 
-				if in_module or curr_type is not self:
+				if sub_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -589,7 +592,7 @@ class Type:
 					module = Shared.imports[mod_path]
 				else:
 					# Reserve spot in dict to avoid recursion
-					module = Type(qual_name, size=None, args=curr_type.args)
+					module = Type(qual_name, module=None, size=None, args=curr_type.args)
 					Shared.imports[mod_path] = module
 
 					module_file = open(mod_path.decode('utf-8'))
@@ -604,7 +607,6 @@ class Type:
 				# print('NEW MODULE', module)
 
 			elif match[1] == 'fn':  # function header
-				# print(f'[P1] New function')
 				if in_function:
 					err('Local functions are not supported')
 
@@ -624,7 +626,7 @@ class Type:
 				if name in curr_type.methods:
 					err(f'Function {name!r} already defined.')
 
-				if in_module or curr_type is not self:
+				if sub_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -634,7 +636,7 @@ class Type:
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 					ret_type, self, tell, Shared.line_no, Shared.infile
 				)
-				# print(f'FUNCTION {name}')
+				# print(f'FUNCTION {qual_name}')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -662,7 +664,7 @@ class Type:
 				if name in curr_type.methods:
 					err(f'Function {name!r} already defined.')
 
-				if in_module or curr_type is not self:
+				if sub_module or curr_type is not self:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
@@ -720,7 +722,7 @@ class Type:
 							err('Field alias is allowed only for enums types. '
 								f'{curr_type} is a struct.')
 
-						field_id = eval_const(field_id, types=types, variables=self.consts)
+						field_id = eval_const(field_id, types=self.children, variables=self.consts)
 						if not field_id.type.is_int():
 							err('Enum field alias expected an integer. '
 								f'Got {field_id.type}.')
@@ -822,11 +824,7 @@ class Type:
 				# else:
 				# 	print(f'[P1] Exit construct')
 
-		# print('End module', self.name)
-
 	def get_instance(self, args: tuple['Type']) -> 'Type':
-		global types
-
 		# if self is PTR_TYPE:
 			# print('GETTING PTR INSTANCE:', args)
 
@@ -854,17 +852,20 @@ class Type:
 			# 	return self  # for fn_wrapper types?
 			# instance = self
 			# return instance
-		else:
-			local_types = dict(zip(self.args, args))
-			instance_types = types | local_types
 
-			instance = Type(
-				' '.join(T.name for T in [self, *args]), is_enum=self.is_enum
-			)
-			instance.args = args
-			instance.parent = self
-			instance.methods = self.methods
-			self.instances[args] = instance
+		local_types = dict(zip(self.args, args))
+		print(f'Computing instance types. globals: {self.module.children}, args: {local_types}, fn: {self}')
+		instance_types = self.module.children | local_types
+
+		instance = Type(
+			' '.join(T.name for T in [self, *args]), self.module, is_enum=self.is_enum
+		)
+		instance.args = args
+		instance.parent = self
+		instance.methods = self.methods
+		instance.children = self.children
+		instance.consts = self.consts
+		self.instances[args] = instance
 
 		# print('GET INSTANCE FIELDS OF', self, self.fields, f'({instance.fields = })')
 
@@ -952,8 +953,8 @@ class Type:
 
 				# expected_type.parent is the polymorphic type
 				if evaluated_token not in (ANY_TYPE, expected_type.parent):
-					err(f'{qual_token!r} evaluated to {evaluated_token}, '
-						f'but the argument expected {expected_type}.')
+					err(f'{qual_token!r} in function signature evaluated to {evaluated_token}, '
+						f'but the argument of {expected_type} was passed.')
 
 				type_queue.extend(expected_type.args)
 
@@ -1144,7 +1145,6 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	if token:
 		# print(f'Type meta:  {token = }, {field = }')
 
-
 		if field == 'type':
 			_insts, _clauses, exp_type = parse_token(token, types,
 				variables=variables, virtual=True)
@@ -1184,7 +1184,7 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	if T.parent is not T: args_len = 0
 	else: args_len = len(T.args)
 
-	# print('PARSETYPE getting instance with', args_len, 'args:', args)
+	# print(f'PARSETYPE getting instance for {T} with {args_len} args: {args}')
 
 	instance = T.get_instance(tuple(args[:args_len]))
 	if pointer: instance = instance.pointer()
@@ -1277,7 +1277,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if len(parse_type_result) != 1:
 			err(
 				f'Expected exactly 1 type for enum. '
-				f'Got {len(parse_type_result)}'
+				f'{type_str!r} yielded {len(parse_type_result)} types'
 			)
 
 		Enum_type, = parse_type_result
@@ -1471,7 +1471,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	elif token.isidentifier():
 		# if addr: err("Can't take addresses of local variables yet")
 		# print(f'{variables = }')
-		if token not in variables: err(f'{token!r} not defined')
+		if token not in variables: err(f'{token!r} not a defined variable')
 		var = variables[token]
 
 		if isinstance(var, Const):
@@ -1509,7 +1509,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		chain = token[dot_idx+1:].split('.')
 		root = root.strip()
 		if root not in variables:
-			err(f'{root!r} not defined')
+			err(f'{root!r} not a defined variable')
 
 		# print(f'Getting a field of {root!r}')
 		var = variables[root]
@@ -1648,6 +1648,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		size = Type.get_size(T.deref)
 		split_sizes = split_size(size)
 
+		if len(split_sizes) > len(dest_reg_fmts):
+			err(f'Unsupported dereference size {size} for {T.deref}')
+
 		ptr_reg = dest_reg_fmts[len(split_sizes)-1]
 
 		insts.append(
@@ -1721,6 +1724,8 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	return insts, clauses, T
 
 def eval_const(exp, types, *, variables) -> Const:
+	exp = exp.strip()
+
 	# don't support enum{} yet
 
 	for operator in ('<=', '>=', '<<', '>>', '==', '!=', *'<>|^&+-*/%'):  # big ones first
@@ -1758,12 +1763,10 @@ def eval_const(exp, types, *, variables) -> Const:
 	dot_idx = Patterns.find_through_strings(exp, '.')
 
 	if colon_idx != -1:
-		exp = exp[:colon_idx]
-		field = exp[colon_idx+1:].strip()
+		exp = exp[:colon_idx].rstrip()
+		field = exp[colon_idx+1:].lstrip()
 
-		# TODO: T, val = parse_meta(exp, field)
-
-		# print(f'Token meta: {exp = }, {field = }')
+		print(f'Token meta: {exp = }, {field = }')
 
 		if exp.endswith(':'):  # const defined in terms of a const
 			parse_type_result = parse_type(exp[:-1], types, variables=variables)
@@ -1841,7 +1844,7 @@ def eval_const(exp, types, *, variables) -> Const:
 
 	elif exp.isidentifier():
 		# if addr: err("Can't take addresses of local variables yet")
-		if exp not in variables: err(f'{exp!r} not defined')
+		if exp not in variables: err(f'{exp!r} not a defined variable')
 		var = variables[exp]
 
 		if addr is Address_modes.ADDRESS:
@@ -2063,7 +2066,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 		# First argument
 		insts, clauses, T = parse_token(exp[:idx].strip(), fn_types, variables=variables)
-		# print(f'Type of {exp[:idx]!r} is {T}')
+		print(f'Type of {exp[:idx]!r} is {T}')
 
 		# TODO: What if I want an integer of a different type?
 
@@ -2288,7 +2291,7 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		# print('Queued and done', (fn_header, instance_key))
 		fn_instance = fn_header.instances[instance_key]
 	else:
-		# print('Adding to queue', (fn_header, instance_key))
+		print('Adding to queue', (fn_header, instance_key))
 		fn_queue.append((fn_header, instance_key))
 		fn_instance = fn_header.add_sub(
 			instance_key, (*type_mappings.values(),)
@@ -2315,7 +2318,7 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 	return ret_type
 
 def get_operator_insts(operator, operand_clause, operand_type):
-	print(f'{Shared.line_no}: OPERATION {operator} USING {operand_type} (size = {operand_clause.size})')
+	# print(f'{Shared.line_no}: OPERATION {operator} USING {operand_type} (size = {operand_clause.size})')
 	if Type.get_size(operand_type) != operand_clause.size:
 		err('[INTERNAL ERROR] clause and type size do not match')
 	# Should not muddle registers. So we can't call functions.
@@ -2477,16 +2480,15 @@ if __name__ == '__main__':
 
 	# Builtins
 
-	PTR_TYPE = Type('_Ptr', PTR_SIZE, args=('T',))
-	PTR_TYPE.size = 8
-
-	types = {}
-	core_module = None
 
 	Shared.infile = core_file
-	core_module = Type.read_module('_core', in_module=False)
-
+	core_module = Type('_core', module=None, size=None)
 	builtin_types = core_module.children
+
+	PTR_TYPE = Type('_Ptr', module=core_module, size=PTR_SIZE, args=('T',))
+	PTR_TYPE.size = 8
+
+	core_module.read(sub_module=False)
 
 	CORE_PTR_TYPE = core_module.children['_Ptr']
 
@@ -2521,7 +2523,7 @@ if __name__ == '__main__':
 	builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
 
 	Shared.infile = std_file
-	std_module = Type.read_module('_std', in_module=False)
+	std_module = Type.read_module('_std', sub_module=False)
 
 	core_module.methods |= std_module.methods
 	core_module.children |= std_module.children
@@ -2530,12 +2532,12 @@ if __name__ == '__main__':
 	main_dir = os.path.dirname(os.path.abspath(argv[1]))
 	os.chdir(main_dir)
 
-	# print()
+	print()
 
 	fn_queue = []
 
 	Shared.infile = arg_infile
-	main_module = Type.read_module('_main', in_module=False)
+	main_module = Type.read_module('_main', sub_module=False)
 	print()
 
 	if 'main' not in main_module.methods:
@@ -2554,6 +2556,8 @@ if __name__ == '__main__':
 		fn_instance.export_name = 'main'
 
 	strings = {}
+
+	print('BEGINNING CODEGEN')
 
 	while fn_queue:
 		fn, instance_key = fn_queue.pop(0)
@@ -2574,14 +2578,13 @@ if __name__ == '__main__':
 
 		output(f'\n; {fn_instance.type_mappings}')
 
-		# print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
+		print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
 
 		curr_mod = fn.module
-		types = curr_mod.children
 
-		fn_types = types | fn_instance.type_mappings
+		fn_types = curr_mod.children | fn_instance.type_mappings
 
-		fn_instance.init_args_vars(types)
+		fn_instance.init_args_vars(curr_mod.children)
 		offset = fn_instance.offset
 
 		variables = curr_mod.consts | fn_instance.arg_vars
@@ -2719,7 +2722,7 @@ if __name__ == '__main__':
 				else: dest_regs = standard_dest_regs
 
 				if not match[2]:
-					ret_type = types['void']
+					ret_type = VOID_TYPE
 				else:
 					# We don't use the expected size
 					# for the case of returning UNSPECIFIED_INT
