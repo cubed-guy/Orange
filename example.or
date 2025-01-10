@@ -913,12 +913,14 @@ fn sdl_tests
 
 	while running
 		let event SDL.events.Event
+		let eref &event:type
+
 		while SDL.events.SDL_PollEvent(&event)
 			if event.quit
 				println("Received quit event")
 				running = bool.false{}
 
-			elif event.keydown -> kb_event  // Too big
+			elif eref.keydown -> kb_event  // Too big
 				let kb_event SDL.events.Keyboard  // This works because there are no scopes
 				print("You pressed: ")
 				print(kb_event.keysym.sym)
@@ -966,7 +968,7 @@ fn main
 	big_moves()
 	enums()
 
-	// sdl_tests()
+	sdl_tests()
 	snake.snake_game()
 
 	SDL.SDL_Quit()

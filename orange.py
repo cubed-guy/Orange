@@ -511,10 +511,9 @@ class Type:
 
 			elif match[1] == 'export':
 				renamed, qual_fn = match[2].split(maxsplit=1)
-				print(f'{renamed = }, {qual_fn = }')
+				print(f'EXPORT   {qual_fn.strip()} as {renamed}')
 
 				fn_split = qual_fn.split(maxsplit=1)
-				print(f'{fn_split = }')
 				if len(fn_split) == 2:
 					fn, type_str = fn_split
 				else:
@@ -636,7 +635,7 @@ class Type:
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 					ret_type, self, tell, Shared.line_no, Shared.infile
 				)
-				# print(f'FUNCTION {qual_name}')
+				print(f'FUNCTION {qual_name}')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -763,7 +762,7 @@ class Type:
 					if name in curr_type.consts:
 						err(f'{name!r} is already a declared constant')
 
-					# print(f'Declared a constant {name!r} associated to {curr_type}')
+					print(f'CONSTANT {curr_type.name}.{name}')
 					const_var = eval_const(exp, curr_type_dict,
 						variables=curr_type.consts)
 					const_var.name = name
@@ -854,7 +853,7 @@ class Type:
 			# return instance
 
 		local_types = dict(zip(self.args, args))
-		print(f'Computing instance types. globals: {self.module.children}, args: {local_types}, fn: {self}')
+		# print(f'Computing instance types. globals: {self.module.children}, args: {local_types}, fn: {self}')
 		instance_types = self.module.children | local_types
 
 		instance = Type(
@@ -954,7 +953,7 @@ class Type:
 				# expected_type.parent is the polymorphic type
 				if evaluated_token not in (ANY_TYPE, expected_type.parent):
 					err(f'{qual_token!r} in function signature evaluated to {evaluated_token}, '
-						f'but the argument of {expected_type} was passed.')
+						f'but argument of {expected_type} was passed.')
 
 				type_queue.extend(expected_type.args)
 
@@ -1487,7 +1486,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if addr is Address_modes.ADDRESS:
 				T = T.pointer()
 				insts.append(
-					f'lea {{dest_reg:{Type.get_size(T)}}}, [rsp + {offset}]'
+					f'lea {{0:{Type.get_size(T)}}}, [rsp + {offset}]'
 				)
 				clauses = ()
 			elif virtual:
@@ -1530,10 +1529,10 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				# We want to dereference T, so we first put it into a register
 				size = Type.get_size(T)  # always equal to PTR_SIZE
 				insts.append(
-					f'mov {{dest_reg:{size}}}, '
+					f'mov {{0:{size}}}, '
 					f'{size_prefix(size)} [{base_reg} + {offset}]'
 				)
-				base_reg = f'{{dest_reg:{size}}}'
+				base_reg = f'{{0:{size}}}'
 				offset = 0
 				T = T.deref
 
@@ -1564,7 +1563,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		base_addr = f'{base_reg} + {offset}'
 		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
-			insts.append(f'lea {{dest_reg:{Type.get_size(T)}}}, [{base_addr}]')
+			insts.append(f'lea {{0:{Type.get_size(T)}}}, [{base_addr}]')
 			clauses = ()
 		elif isinstance(T, Flag):
 			clauses = ()
@@ -1648,10 +1647,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		size = Type.get_size(T.deref)
 		split_sizes = split_size(size)
 
-		if len(split_sizes) > len(dest_reg_fmts):
+		if len(split_sizes) >= len(dest_reg_fmts):
 			err(f'Unsupported dereference size {size} for {T.deref}')
 
-		ptr_reg = dest_reg_fmts[len(split_sizes)-1]
+		# Use a reg not used by the dereference
+		ptr_reg = dest_reg_fmts[len(split_sizes)]
 
 		insts.append(
 			f'mov {{{ptr_reg}:{clause.size}}}, {clause.asm_str}'
@@ -1659,10 +1659,11 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		offset = 0
 		clauses = []
-		output(';', dest_reg_fmts, size, split_size(size))
-		for dest_reg_fmt, sub_size in zip(dest_reg_fmts, split_size(size)):
+		output(';', dest_reg_fmts, size, split_sizes)
+		for sub_size in split_sizes:
 			clauses.append(Clause.ref(
-				f'{{{ptr_reg}:{Type.get_size(T)}}} + {offset}'
+				f'{{{ptr_reg}:{Type.get_size(T)}}} + {offset}',
+				size=sub_size,
 			))
 			offset += sub_size
 		output(';', clauses)
@@ -1682,24 +1683,26 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		ctrl_no = Ctrl.next()
 
-		print(f'{Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
+		# print(f'{Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
 
 		insts += [
 			# preserves flag state
 
 			f'j{(~T).name} _U{ctrl_no}',
 		]
+
 		clause_offset = offset
 		for clause_size, o_clause in zip(split_size(size), o_clauses):
 			insts += [
-				f'mov {{{dest_reg_fmts[0]}:{clause_size}}}, '
+				f'mov {{{len(clauses)}:{clause_size}}}, '
 				f'{size_prefix(clause_size)} [{base_reg} + {clause_offset}]',
-				f'mov {o_clause.asm_str}, {{{dest_reg_fmts[0]}:{clause_size}}}',
+				f'mov {o_clause.asm_str}, {{{len(clauses)}:{clause_size}}}',
 			]
 			clause_offset += clause_size
 		insts += [
 			f'_U{ctrl_no}:',
 		]
+		clauses = ()
 
 	elif operator is not None:
 		# Type check before codegen
@@ -1955,7 +1958,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 		if isinstance(T, Flag):
 			# print('Parsed flag token', exp, '->', T)
 			for inst in insts:
-				output(inst.format(dest_reg=Register.b))
+				output(inst.format(*standard_dest_regs))
 				# err('[Internal error] Multiple instructions from a flag token')
 
 			if dest_regs is Flag: return T  # returns flag if relational
@@ -1981,29 +1984,23 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 		# [x] T val, dest_reg val -> mov
 		if dest_regs is not Flag:
 			# This is important. This is responsible for assignment.
-			if len(dest_regs) > 2 or len(dest_regs) == 0:
+			if len(exp_clauses) > len(dest_regs):
 				err(
 					'[Internal error] Unsupported variable size: '
-					f'{Type.get_size(T)}'
+					f'{Type.get_size(T)}. {exp_clauses = }'
 				)
-			elif len(dest_regs) == 2:
-				dest_reg = dest_regs[0]
-				aux_reg  = dest_regs[1]
-			elif len(dest_regs) == 1:
-				dest_reg = dest_regs[0]
-				aux_reg = None
+			if not dest_regs:
+				err(f'[Internal error] No dest_regs for expression {exp!r}')
 
 			for inst in insts:
-				output(inst.format(dest_reg=dest_reg, aux_reg=aux_reg))
+				output(inst.format(*dest_regs))
 
 			output(';', dest_regs, exp_clauses, size)
 			for dest_reg, sub_clause in zip(dest_regs, exp_clauses):
 				# print('Moving into rax', T, size)
 				output(
 					f'mov {dest_reg:{sub_clause.size}}, '
-					f'''{sub_clause.asm_str.format(
-						dest_reg=dest_reg, aux_reg=aux_reg
-					)}'''
+					f'''{sub_clause.asm_str.format(*dest_regs)}'''
 				)
 
 			return T
@@ -2021,10 +2018,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 			for inst in insts:
 				output(
-					inst.format(
-						dest_reg=standard_dest_regs[0],
-						aux_reg=standard_dest_regs[1],
-					)
+					inst.format(*standard_dest_regs)
 				)
 
 			if T is UNSPECIFIED_INT and exp_clause.asm_str.isdigit():
@@ -2038,8 +2032,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 			elif exp_clause is not None:
 				# works only if exp_clause can be a dest
 				output(f'''test {exp_clause.asm_str.format(
-						dest_reg=standard_dest_regs[0],
-						aux_reg=standard_dest_regs[1],
+						*standard_dest_regs,
 					)}, -1''')
 				return Flag.nz
 			else:
@@ -2066,7 +2059,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 		# First argument
 		insts, clauses, T = parse_token(exp[:idx].strip(), fn_types, variables=variables)
-		print(f'Type of {exp[:idx]!r} is {T}')
+		# print(f'Type of {exp[:idx]!r} is {T}')
 
 		# TODO: What if I want an integer of a different type?
 
@@ -2074,15 +2067,13 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 			err('Non standard sizes are not yet supported in function calls')
 
 		for inst in insts:
-			output(inst.format(dest_reg=arg_regs[0], aux_reg=arg_regs[1]))
+			output(inst.format(*arg_regs))
 		for clause, arg_reg in zip(clauses, arg_regs):
 			if clause is None: continue
 			reg_str = arg_regs[0].encode(size=clause.size)
 			output(
 				f'mov {reg_str}, '
-				f'''{clause.asm_str.format(
-					dest_reg=arg_regs[0], aux_reg=arg_regs[1]
-				)}'''
+				f'{clause.asm_str.format(*arg_regs)}'
 			)
 
 		arg_types = [T]
@@ -2176,7 +2167,8 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		# TODO: What if I want an integer of a different type?
 
 		for inst in insts:
-			output(inst.format(dest_reg=arg_reg))
+			# print('FORMATTING INST', inst, 'with', arg_regs)
+			output(inst.format(*arg_regs))
 
 		if len(clauses) > 1:
 			err(
@@ -2186,7 +2178,8 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		elif clauses:
 			clause, = clauses
 			reg_str = arg_reg.encode(size=clause.size)
-			output(f'mov {reg_str}, {clause.asm_str.format(dest_reg=arg_reg)}')
+			# print(f'FORMATTING {clause.asm_str!r} with {len(standard_dest_regs)} params {standard_dest_regs}')
+			output(f'mov {reg_str}, {clause.asm_str.format(*standard_dest_regs)}')
 
 		arg_types.append(T)
 
@@ -2291,7 +2284,7 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		# print('Queued and done', (fn_header, instance_key))
 		fn_instance = fn_header.instances[instance_key]
 	else:
-		print('Adding to queue', (fn_header, instance_key))
+		# print('Adding to queue', (fn_header, instance_key))
 		fn_queue.append((fn_header, instance_key))
 		fn_instance = fn_header.add_sub(
 			instance_key, (*type_mappings.values(),)
@@ -2337,7 +2330,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 
 		if operand_type is STR_TYPE:
 			return [
-				f'mov {arg_regs[0]:8}, {{dest_reg:8}}',
+				f'mov {arg_regs[0]:8}, {{0:8}}',
 				f'mov {arg_regs[1]:{operand_clause.size}}, {operand_clause.asm_str}',
 				'call strcmp',
 				'cmp al, 0'
@@ -2347,46 +2340,46 @@ def get_operator_insts(operator, operand_clause, operand_type):
 		size = Type.get_size(operand_type)
 		return [
 			f'mov {Register.c:{operand_clause.size}}, {operand_clause.asm_str}',
-			f'shl {{dest_reg:{size}}}, cl',
+			f'shl {{0:{size}}}, cl',
 		]
 	elif operator == '>>':
 		size = Type.get_size(operand_type)
 		return [
 			f'mov {Register.c:{operand_clause.size}}, {operand_clause.asm_str}',
-			f'shr {{dest_reg:{size}}}, cl',
+			f'shr {{0:{size}}}, cl',
 		]
 	elif operator == '*':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
+			f'mov {Register.a:{size}}, {{0:{size}}}',
 			f'xor rdx, rdx',
 			f'mov {Register.b:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'mul {Register.b:{size}}',
-			f'mov {{dest_reg:{size}}}, {Register.a:{size}}'
+			f'mov {{0:{size}}}, {Register.a:{size}}'
 		]
 	elif operator == '/':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
+			f'mov {Register.a:{size}}, {{0:{size}}}',
 			f'xor rdx, rdx',
 			f'mov {Register.b:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'div {Register.b:{size}}',
-			f'mov {{dest_reg:{size}}}, {Register.a:{size}}'
+			f'mov {{0:{size}}}, {Register.a:{size}}'
 		]
 	elif operator == '%':
 		size = Type.get_size(operand_type)
 		return [
-			f'mov {Register.a:{size}}, {{dest_reg:{size}}}',
+			f'mov {Register.a:{size}}, {{0:{size}}}',
 			f'xor rdx, rdx',
 			f'mov {Register.b:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'div {Register.b:{operand_clause.size}}',
-			f'mov {{dest_reg:{size}}}, {Register.d:{size}}'
+			f'mov {{0:{size}}}, {Register.d:{size}}'
 		]
 	else:
 		# others?
 		err(f'Operator {operator} not supported')
 
-	return [f'{inst} {{dest_reg:{operand_clause.size}}}, {operand_clause.asm_str}']
+	return [f'{inst} {{0:{operand_clause.size}}}, {operand_clause.asm_str}']
 
 def operator_result_type(operator, l_type, r_type) -> Type:
 	if operator == '-':
@@ -2469,8 +2462,8 @@ if Shared.arch is Arch.win64:
 else:
 	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
-standard_dest_regs = (Register.a, Register.b)
-dest_reg_fmts = ('dest_reg', 'aux_reg')
+standard_dest_regs = (Register.a, Register.b, Register.c, Register.d, Register.r8, Register.r9)
+dest_reg_fmts = (*range(len(standard_dest_regs)),)
 
 orange_dir = os.path.dirname(__file__)
 
@@ -2557,8 +2550,6 @@ if __name__ == '__main__':
 
 	strings = {}
 
-	print('BEGINNING CODEGEN')
-
 	while fn_queue:
 		fn, instance_key = fn_queue.pop(0)
 		fn_instance = fn.instances[instance_key]
@@ -2578,7 +2569,7 @@ if __name__ == '__main__':
 
 		output(f'\n; {fn_instance.type_mappings}')
 
-		print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
+		# print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
 
 		curr_mod = fn.module
 
@@ -2730,15 +2721,14 @@ if __name__ == '__main__':
 						dest_regs = dest_regs, fn_queue = fn_queue,
 						variables = variables)
 
-				fn_type_list = parse_type(fn.ret_type, fn_types,
+				parse_type_result = parse_type(fn.ret_type, fn_types,
 					variables=variables)
 
-				if fn_type_list is None:
-					# TODO: better message
-					err(f'Type {fn.ret_type!r} is not available.')
-				if len(fn_type_list) != 1:
+				if isinstance(parse_type_result, ParseTypeError):
+					err(f'[in {fn.ret_type.strip()!r}] {parse_type_result}')
+				if len(parse_type_result) != 1:
 					err('Return type must be exactly one type')
-				expected_ret_type, = fn_type_list
+				expected_ret_type, = parse_type_result
 
 				if ret_type is UNSPECIFIED_INT:
 					if not expected_ret_type.is_int():
@@ -2910,7 +2900,7 @@ if __name__ == '__main__':
 
 						# the value of the expression is in rax
 						for inst in insts:
-							output(inst.format(dest_reg=first_arg))
+							output(inst.format(first_arg))
 
 						# TODO: Use big moves
 						# TODO: I need a convenience function
@@ -2923,7 +2913,7 @@ if __name__ == '__main__':
 						output(
 							f'mov {first_arg:{dest_clause.size}}, '
 							f'''{dest_clause.asm_str.format(
-								dest_reg=first_arg, aux_reg=second_arg
+								first_arg, second_arg
 							)}'''
 						)
 						# print(f'Moving into {dest_clause!r}')
@@ -2948,31 +2938,34 @@ if __name__ == '__main__':
 							err('_setitem() must return void')
 
 					else:
-						if ret_type is UNSPECIFIED_INT:
-							if not dest_type.is_int():
-								err(f'Cannot assign an integer into '
-									f'variable {dest} of {dest_type}')
-						elif ret_type is not dest_type:
+						if (
+							ret_type is not dest_type
+							and not (ret_type is UNSPECIFIED_INT and dest_type.is_int())
+						):
 							err(f'Cannot assign {ret_type} into '
 								f'variable {dest} of {dest_type}')
 
 						# IMPORTANT: Base assignment logic
+						# Possibly unstable now with bigger variable support
 
-						# the value of the expression is in rax
+						# the value of the expression is in standard_dest_regs
 						for inst in insts:
 							output(
-								inst.format(dest_reg=Register.c, aux_reg=Register.d)
+								inst.format(*standard_dest_regs)
 							)
 
-						# print(f'Moving into {dest_clauses!r} using {insts}')
+						# ret_sizes_split = split_size(T.get_size(ret_type))
+						# if len(dest_clauses) + len(ret_sizes_split) > len(standard_dest_regs):
+						# 	err(f'Assignment is too complex {dest_clauses = }, ret: {ret_sizes_split}')
+
+						output(f'; Moving into {dest_clauses!r}')
 						for dest_reg, dest_clause in zip(
 							standard_dest_regs,
 							dest_clauses,
 						):
+							# print(f'FORMATTING {dest_clause.asm_str!r} with {len(standard_dest_regs)} params {standard_dest_regs}')
 							output(
-								f'''mov {dest_clause.asm_str.format(
-									dest_reg=arg_regs[0], aux_reg=arg_regs[1]
-								)}, '''
+								f'mov {dest_clause.asm_str.format(*standard_dest_regs)}, '
 								f'{dest_reg:{dest_clause.size}}'
 							)
 
