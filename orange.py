@@ -1266,7 +1266,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				enum_val_token, types, variables=variables, virtual=virtual
 			)
 
-		type_str, _, variant_name = token[:idx].rpartition('.')
+		type_str, dot, variant_name = token[:idx].rpartition('.')
+		if not dot:
+			err('Instantiating an enum without specifying a variant')
 
 		parse_type_result = parse_type(type_str, types, variables=variables)
 
