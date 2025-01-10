@@ -11,6 +11,8 @@ end
 
 type u64
 	// size = 8
+
+	const null 0
 	extern printf: str fmt, u64 d
 	fn _print: u64 self
 		u64.printf("%p", self)
@@ -24,6 +26,7 @@ end
 type int
 	// size = 4
 
+	const null 0
 	extern printf: str fmt, int d
 	fn _print: int self
 		int.printf("%d", self)

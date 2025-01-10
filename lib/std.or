@@ -123,8 +123,8 @@ type Dict K V
 		let i int
 		i = 0
 		while i < cap
-			out.keys[i] = str::null
-			out.values[i] = 0
+			out.keys[i] = K::null
+			out.values[i] = V::null
 			i = i + 1
 		end
 
@@ -132,7 +132,7 @@ type Dict K V
 	end
 
 	fn index: &Dict K V dict, K key -> int
-		if dict == 0
+		if dict == Dict K V:null
 			return 0-1
 		end
 
@@ -157,7 +157,7 @@ type Dict K V
 		curr_key = dict.keys[index]
 
 		// return -1 only if there's no more space
-		while curr_key != 0
+		while curr_key != K::null
 			if curr_key == key
 				return index
 			end
@@ -184,8 +184,8 @@ type Dict K V
 		end
 
 		key = self.keys[index]
-		if key == 0
-			return V:null
+		if key == K::null
+			return V:null  // null ptr to V
 		end
 
 		return &self.values[index]
@@ -195,7 +195,7 @@ type Dict K V
 		let ptr &V
 		ptr = &self[key]
 		if ptr == 0
-			return 0
+			return V::null  // null value of V
 		end
 		return *ptr
 	end
@@ -206,8 +206,6 @@ type Dict K V
 		if index < 0
 			return
 		end
-
-		let scaled_index int
 
 		let key_ptr &K
 		key_ptr = &self.keys[index]
