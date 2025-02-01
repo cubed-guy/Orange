@@ -58,7 +58,7 @@ class Shared:
 
 class Subscriptable:
 	def __getitem__(self, key):
-		return f'{self.__class__.__name__}_{id(self)&0xffff:x04}[{key}]'
+		return f'{self.__class__.__name__}_{id(self)&0xffff:04x}[{key}]'
 
 class Arch(Enum):
 	elf64 = auto()
@@ -326,8 +326,10 @@ class Const:  # Instantiated when types are known
 		return f'Const({self.name} = {self.value!r})'
 
 class Clause:
-	def __init__(self, asm_str, *, size=8):
+	def __init__(self, asm_str, size):
 		if size not in (1, 2, 4, 8): err(f'Invalid clause size: {size}')
+
+		print('NEW CLAUSE', asm_str, size)
 
 		self.asm_str = asm_str
 		self.size = size
@@ -339,16 +341,15 @@ class Clause:
 	def __repr__(self):
 		return f'{self.__class__.__name__}({self.asm_str}, size={self.size})'
 
+UNSPECIFIED_SIZE = 8
 UNSPECIFIED_INT = type('UNSPECIFIED_INT', (), {
 	'__repr__': lambda s: f'Type<UNSPECIFIED_INT>',
 	'is_int': lambda s: True, 'deref': None,
+	'size': UNSPECIFIED_SIZE,
 })()
-FLAG_TYPE = type('FLAG_TYPE', (), {
-	'__repr__': lambda s: f'Type<FLAG>'
-})()
-MISSING = type('MISSING', (), {
-	'__repr__': lambda s: f'<MISSING ARG>'
-})()
+# MISSING = type('MISSING', (), {
+# 	'__repr__': lambda s: f'<MISSING ARG>'
+# })()
 
 class Type:
 	def __init__(self, name, module, size = 0, args = (), is_enum = False):
@@ -374,14 +375,6 @@ class Type:
 
 	def __repr__(self):
 		return f'{self.__class__.__name__}({self.name})'
-
-	@classmethod
-	def get_size(cls, T, *, unspecified = 8):
-		if T is UNSPECIFIED_INT:
-			return unspecified
-		if not isinstance(T, cls):
-			err(f'[Internal Error] Invalid type {T.__class__} for type')
-		return T.size
 
 	@classmethod
 	def read_module(cls, name, *, args=(), sub_module=True):
@@ -1122,6 +1115,16 @@ def size_prefix(size):
 		return 'qword'
 	err(f'[Internal error] Invalid size {size} for getting size prefix')
 
+class FmtReplacer:
+	def __init__(self, val):
+		self.val = val
+
+	def __format__(self, fmt):
+		out = f'{{{self.val}:{fmt}}}'
+		# print('FmtReplacer ->', repr(out))
+		return out
+
+
 def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeError]:
 	if type_str.startswith('&'):
 		type_str = type_str[1:].strip()
@@ -1239,7 +1242,7 @@ def parse_string(token) -> bytes:
 	return bytes(string_data)
 
 def parse_token(token: 'stripped', types, *, variables, virtual=False) \
-	-> (list[str], tuple[Optional[int], ...], Type):
+	-> (list[str], list[Clause], Type):
 	'''
 	Returns a set of instructions and the clauses to access the result.
 	The clauses mention how to access the different part of the result.
@@ -1300,13 +1303,10 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		discriminator_size = get_discriminator_size(Enum_type.last_field_id)
 		if discriminator_size:
-			clauses = (
-				Clause(
-					f'{variant.field_id}',
-					size=get_discriminator_size(Enum_type.last_field_id)
-				),
+			clauses = [
+				Clause(f'{variant.field_id}', size=discriminator_size),
 				*clauses,
-			)
+			]
 
 		output('; Enum clauses:', clauses)
 
@@ -1405,7 +1405,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if virtual:
 				clauses = (Clause('_dummy_string_label'),)
 			else:
-				clauses = (Clause(get_string_label(string, strings)),)
+				clauses = (Clause(get_string_label(string, strings), 8),)
 			T = STR_TYPE
 		elif field == 'disc':
 			f_insts, clauses, exp_type = parse_token(exp, types,
@@ -1445,7 +1445,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			T, = parse_type_result
 
 			string = bytes(T.name, 'utf-8')
-			clauses = (Clause(get_string_label(string, strings)),)
+			clauses = (Clause(get_string_label(string, strings), 8),)
 			T = STR_TYPE
 
 		elif field == 'null':
@@ -1456,7 +1456,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				err(f'{exp!r} does not correspond to a single type')
 			T, = parse_type_result
 
-			clauses = (Clause('0'),)
+			clauses = (Clause('0', 8),)
 			T = T.pointer()
 
 		else:  # TODO: var:len
@@ -1486,7 +1486,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if addr is Address_modes.ADDRESS:
 				T = T.pointer()
 				insts.append(
-					f'lea {{0:{Type.get_size(T)}}}, [rsp + {offset}]'
+					f'lea {{0:{T.size}}}, [rsp + {offset}]'
 				)
 				clauses = ()
 			elif virtual:
@@ -1527,7 +1527,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			if T is not STR_TYPE and T.deref is not None:
 				# We want to dereference T, so we first put it into a register
-				size = Type.get_size(T)  # always equal to PTR_SIZE
+				size = T.size  # always equal to PTR_SIZE
 				insts.append(
 					f'mov {{0:{size}}}, '
 					f'{size_prefix(size)} [{base_reg} + {offset}]'
@@ -1563,7 +1563,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		base_addr = f'{base_reg} + {offset}'
 		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
-			insts.append(f'lea {{0:{Type.get_size(T)}}}, [{base_addr}]')
+			insts.append(f'lea {{0:{T.size}}}, [{base_addr}]')
 			clauses = ()
 		elif isinstance(T, Flag):
 			clauses = ()
@@ -1573,7 +1573,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			split_size(T.size)
 			clauses = []
 
-			for size in split_size(Type.get_size(T)):
+			for size in split_size(T.size):
 				clauses.append(Clause(
 					f'{size_prefix(size)} [{base_reg} + {offset}]', size=size
 				))
@@ -1626,7 +1626,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if addr is Address_modes.ADDRESS: err('Cannot take address of string literal')
 
 		string = parse_string(token)
-		clauses = (Clause(get_string_label(string, strings)),)
+		clauses = (Clause(get_string_label(string, strings), 8),)
 		T = STR_TYPE
 
 	else:
@@ -1636,7 +1636,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		err(f'[INTERNAL ERROR] Type of token {token!r} not determined.')
 
 	if val is not None:
-		clauses = (Clause(f'{val}', size = Type.get_size(T)),)
+		clauses = (Clause(f'{val}', size = T.size),)
 
 	if addr is Address_modes.DEREF:
 		if T.deref in (None, ANY_TYPE):
@@ -1644,7 +1644,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if len(clauses) != 1: err('Invalid pointer size')
 
 		clause, = clauses
-		size = Type.get_size(T.deref)
+		size = T.deref.size
 		split_sizes = split_size(size)
 
 		if len(split_sizes) >= len(dest_reg_fmts):
@@ -1654,7 +1654,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		ptr_reg = dest_reg_fmts[len(split_sizes)]
 
 		insts.append(
-			f'mov {{{ptr_reg}:{clause.size}}}, {clause.asm_str}'
+			f'mov {ptr_reg:{clause.size}}, {clause.asm_str}'
 		)
 
 		offset = 0
@@ -1662,7 +1662,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		output(';', dest_reg_fmts, size, split_sizes)
 		for sub_size in split_sizes:
 			clauses.append(Clause.ref(
-				f'{{{ptr_reg}:{Type.get_size(T)}}} + {offset}',
+				f'{ptr_reg:{T.size}} + {offset}',
 				size=sub_size,
 			))
 			offset += sub_size
@@ -1716,8 +1716,8 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		insts += [
 			# *o_insts,  # too complex if not empty
 
-			*(f'mov {{{dest_reg_fmt}:{clause.size}}}, {clause.asm_str}'
-				for dest_reg_fmt, clause in zip(dest_reg_fmts, clauses)),
+			*(f'mov {{{i}:{clause.size}}}, {clause.asm_str}'
+				for i, clause in enumerate(clauses)),
 
 			*get_operator_insts(operator, o_clause, o_type)
 		]
@@ -2049,7 +2049,6 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 
 
 	if exp_type is Exp_type.GETITEM:
-		# TODO: method call support
 		if exp.startswith('&'):
 			fn_name = '_getref'
 			exp = exp[1:]
@@ -2064,7 +2063,7 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 		# TODO: What if I want an integer of a different type?
 
 		if len(clauses) != 1:
-			err('Non standard sizes are not yet supported in function calls')
+			err(f'Non-standard sized types are not yet supported here ({T} uses {T.size} bytes)')
 
 		for inst in insts:
 			output(inst.format(*arg_regs))
@@ -2173,10 +2172,11 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		if len(clauses) > 1:
 			err(
 				'[Internal Error] Only register sized arguments are supported. '
-				f'({arg!r} has a size of {Type.get_size(T)})'
+				f'({arg!r} has a size of {T.size})'
 			)
-		elif clauses:
-			clause, = clauses
+
+		if clauses:
+			[clause] = clauses
 			reg_str = arg_reg.encode(size=clause.size)
 			# print(f'FORMATTING {clause.asm_str!r} with {len(standard_dest_regs)} params {standard_dest_regs}')
 			output(f'mov {reg_str}, {clause.asm_str.format(*standard_dest_regs)}')
@@ -2312,7 +2312,7 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 
 def get_operator_insts(operator, operand_clause, operand_type):
 	# print(f'{Shared.line_no}: OPERATION {operator} USING {operand_type} (size = {operand_clause.size})')
-	if Type.get_size(operand_type) != operand_clause.size:
+	if operand_type.size != operand_clause.size:
 		err('[INTERNAL ERROR] clause and type size do not match')
 	# Should not muddle registers. So we can't call functions.
 
@@ -2337,19 +2337,19 @@ def get_operator_insts(operator, operand_clause, operand_type):
 			]
 		inst = 'cmp'
 	elif operator == '<<':
-		size = Type.get_size(operand_type)
+		size = operand_type.size
 		return [
 			f'mov {Register.c:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'shl {{0:{size}}}, cl',
 		]
 	elif operator == '>>':
-		size = Type.get_size(operand_type)
+		size = operand_type.size
 		return [
 			f'mov {Register.c:{operand_clause.size}}, {operand_clause.asm_str}',
 			f'shr {{0:{size}}}, cl',
 		]
 	elif operator == '*':
-		size = Type.get_size(operand_type)
+		size = operand_type.size
 		return [
 			f'mov {Register.a:{size}}, {{0:{size}}}',
 			f'xor rdx, rdx',
@@ -2358,7 +2358,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 			f'mov {{0:{size}}}, {Register.a:{size}}'
 		]
 	elif operator == '/':
-		size = Type.get_size(operand_type)
+		size = operand_type.size
 		return [
 			f'mov {Register.a:{size}}, {{0:{size}}}',
 			f'xor rdx, rdx',
@@ -2367,7 +2367,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 			f'mov {{0:{size}}}, {Register.a:{size}}'
 		]
 	elif operator == '%':
-		size = Type.get_size(operand_type)
+		size = operand_type.size
 		return [
 			f'mov {Register.a:{size}}, {{0:{size}}}',
 			f'xor rdx, rdx',
@@ -2462,8 +2462,12 @@ if Shared.arch is Arch.win64:
 else:
 	arg_regs = (Register.di, Register.si, Register.c, Register.d, Register.r8, Register.r9)
 
-standard_dest_regs = (Register.a, Register.b, Register.c, Register.d, Register.r8, Register.r9)
-dest_reg_fmts = (*range(len(standard_dest_regs)),)
+standard_dest_regs = (
+	Register.a, Register.b, Register.c, Register.d,
+	Register.r8, Register.r9, Register.r10, Register.r11,
+	Register.r12, Register.r13, Register.r14, Register.r15,
+)
+dest_reg_fmts = tuple(FmtReplacer(i) for i, dest in enumerate(standard_dest_regs))
 
 orange_dir = os.path.dirname(__file__)
 
@@ -2513,7 +2517,7 @@ if __name__ == '__main__':
 
 	# print('STR_TYPE size =', STR_TYPE.size)
 
-	builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT, FLAG_TYPE}
+	builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT}
 
 	Shared.infile = std_file
 	std_module = Type.read_module('_std', sub_module=False)
@@ -2704,7 +2708,7 @@ if __name__ == '__main__':
 
 			match = Patterns.split_word.match(line)
 
-			if not match: match = Subscriptable(); print(match)
+			if not match: match = Subscriptable(); print('NON-WORD', match)
 
 			if   match[1] == 'let': continue
 			elif match[1] == 'const': continue
@@ -2898,7 +2902,6 @@ if __name__ == '__main__':
 
 						dest_clause, = dest_clauses
 
-						# the value of the expression is in rax
 						for inst in insts:
 							output(inst.format(first_arg))
 
@@ -2917,7 +2920,7 @@ if __name__ == '__main__':
 							)}'''
 						)
 						# print(f'Moving into {dest_clause!r}')
-						ret_size = Type.get_size(ret_type)
+						ret_size = ret_type.size
 						output(f'mov {second_arg:{ret_size}}, '
 							f'{Register.a:{ret_size}}')
 
