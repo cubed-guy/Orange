@@ -1124,6 +1124,9 @@ class FmtReplacer:
 		# print('FmtReplacer ->', repr(out))
 		return out
 
+	def __repr__(self):
+		return f'Fmt{{{self.val}}}'
+
 
 def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeError]:
 	if type_str.startswith('&'):
@@ -1241,7 +1244,7 @@ def parse_string(token) -> bytes:
 
 	return bytes(string_data)
 
-def parse_token(token: 'stripped', types, *, variables, virtual=False) \
+def parse_token(token: 'stripped', types, *, variables, expected_split=None, virtual=False) \
 	-> (list[str], list[Clause], Type):
 	'''
 	Returns a set of instructions and the clauses to access the result.
@@ -1301,6 +1304,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 					f'{variant.type}. Got {T} instead.'
 				)
 
+		if expected_split is not None:
+			err(f'Cannot force a clause split for {token!r}')
+
 		discriminator_size = get_discriminator_size(Enum_type.last_field_id)
 		if discriminator_size:
 			clauses = [
@@ -1346,8 +1352,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	else:
 		addr = Address_modes.NONE
 
-	clauses = ()
-	val = None
+	const_val = None
 	var = None
 	T   = None
 	insts = []
@@ -1359,7 +1364,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		exp = token[:colon_idx]
 		field = token[colon_idx+1:].strip()
 
-		# TODO: T, val = parse_meta(exp, field)
+		# TODO: T, const_val = parse_meta(exp, field)
 
 		# print(f'Token meta: {exp = }, {field = }')
 
@@ -1372,23 +1377,23 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if field not in T.consts:
 				err(f'{field!r} was not found in {T}')
 
-			val = T.consts[field]
+			const_val = T.consts[field]
 
-			T = val.type
-			val = val.value
+			T = const_val.type
+			const_val = const_val.value
 
 		elif field == 'size':
 			parse_type_result = parse_type(exp, types, variables=variables)
 			if isinstance(parse_type_result, ParseTypeError):
 				err(f'In {exp!r}, {parse_type_result}')
 			if addr is Address_modes.ADDRESS:
-				val = PTR_SIZE
+				const_val = PTR_SIZE
 			else:
 				if len(parse_type_result) != 1:
 					err(f'{exp!r} does not correspond to a single type')
 				T, = parse_type_result
-				val = T.size
-			# print(f'{T}:size = {val}')
+				const_val = T.size
+			# print(f'{T}:size = {const_val}')
 			T = UNSPECIFIED_INT
 		elif field == 'type':
 			_insts, _clauses, exp_type = parse_token(exp, types,
@@ -1402,8 +1407,9 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				exp_type = exp_type.deref
 
 			string = bytes(exp_type.name, 'utf-8')
+			if expected_split is not None: err(f'Cannot force a split for {token!r}')
 			if virtual:
-				clauses = (Clause('_dummy_string_label'),)
+				clauses = (Clause('_dummy_string_label', 8),)
 			else:
 				clauses = (Clause(get_string_label(string, strings), 8),)
 			T = STR_TYPE
@@ -1432,6 +1438,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			if clause.size != size:
 				err(f'Cannot get discriminator for enum {T} with size {T.size}')
 
+			if expected_split is not None: err(f'Cannot force a split for {token!r}')
 			clauses = (clause,)
 
 			T = UNSPECIFIED_INT
@@ -1445,6 +1452,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			T, = parse_type_result
 
 			string = bytes(T.name, 'utf-8')
+			if expected_split is not None: err(f'Cannot force a split for {token!r}')
 			clauses = (Clause(get_string_label(string, strings), 8),)
 			T = STR_TYPE
 
@@ -1456,6 +1464,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				err(f'{exp!r} does not correspond to a single type')
 			T, = parse_type_result
 
+			if expected_split is not None: err(f'Cannot force a split for {token!r}')
 			clauses = (Clause('0', 8),)
 			T = T.pointer()
 
@@ -1478,7 +1487,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				err('Cannot take a reference to a constant')
 
 			T = var.type
-			val = var.value  # TODO: enums
+			const_val = var.value  # TODO: enums
 
 		else:
 			offset = var.offset
@@ -1488,15 +1497,26 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 				insts.append(
 					f'lea {{0:{T.size}}}, [rsp + {offset}]'
 				)
-				clauses = ()
+				clauses = (Clause(f'{{0:{T.size}}}', T.size),)
 			elif virtual:
 				clauses = ()
 			else:
 				# clause = f'{size_prefix(var.type.size)} [{clause}]'
 
 				# big moves
-				sizes = split_size(T.size)
+				if expected_split is None or addr is Address_modes.DEREF:
+					sizes = split_size(T.size)
+				else:
+					sizes = expected_split
+					if sum(expected_split) > T.size:
+						sizes[-1] -= sum(expected_split)-T.size
+						if sizes[-1] not in (1, 2, 4, 8):
+							err(
+								f'Cannot expect {expected_split} '
+								f'for {T} of size {T.size}'
+							)
 				clauses = []
+				print('CREATING CLAUSES FOR', sizes)
 				for size in sizes:
 					clauses.append(Clause(
 						f'{size_prefix(size)} [rsp + {offset}]', size=size
@@ -1564,16 +1584,28 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
 			insts.append(f'lea {{0:{T.size}}}, [{base_addr}]')
-			clauses = ()
+			clauses = (Clause(f'{{0:{T.size}}}', T.size),)
 		elif isinstance(T, Flag):
 			clauses = ()
 		else:
 			# DONE: big move support
 			# TODO: it needs to support stacks eventually
-			split_size(T.size)
-			clauses = []
 
-			for size in split_size(T.size):
+			# big moves
+			if expected_split is None or addr is Address_modes.DEREF:
+				sizes = split_size(T.size)
+			else:
+				sizes = expected_split
+				if sum(expected_split) > T.size:
+					sizes[-1] -= sum(expected_split)-T.size
+					if sizes[-1] not in (1, 2, 4, 8):
+						err(
+							f'Cannot expect {expected_split} '
+							f'for {T} of size {T.size}'
+						)
+
+			clauses = []
+			for size in sizes:
 				clauses.append(Clause(
 					f'{size_prefix(size)} [{base_reg} + {offset}]', size=size
 				))
@@ -1584,7 +1616,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 			err("Can't take address of an integer literal")
 		if addr is Address_modes.DEREF:
 			err("Can't dereference an integer literal")
-		val = int(token)
+		const_val = int(token)
 		T = UNSPECIFIED_INT
 
 	elif token.startswith("'"):
@@ -1602,24 +1634,24 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 		if token[1] != '\\':
 			if len(token) != 3:
 				err('Invalid syntax for character literal')
-			val = ord(token[1])
+			const_val = ord(token[1])
 		elif token[2] != 'x':
 			if len(token) > 4: err('Character literal too long')
 			if len(token) < 4: err('Character literal too short')
 			c = token[2]
-			if   c == '0':  val = 0
-			elif c == 't':  val = 9
-			elif c == 'n':  val = 10
-			elif c == 'e':  val = 27
-			elif c == '"':  val = 34
-			elif c == "'":  val = 39
-			elif c == '\\': val = 92
+			if   c == '0':  const_val = 0
+			elif c == 't':  const_val = 9
+			elif c == 'n':  const_val = 10
+			elif c == 'e':  const_val = 27
+			elif c == '"':  const_val = 34
+			elif c == "'":  const_val = 39
+			elif c == '\\': const_val = 92
 			else:
 				err('Invalid escape sequence')
 		else:
 			if len(token) != 6:
 				err('Invalid syntax for character literal')
-			val = int(token[3:5], 16)
+			const_val = int(token[3:5], 16)
 		T = CHAR_TYPE
 
 	elif token.startswith('"'):
@@ -1635,23 +1667,31 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 	if T is None:
 		err(f'[INTERNAL ERROR] Type of token {token!r} not determined.')
 
-	if val is not None:
-		clauses = (Clause(f'{val}', size = T.size),)
+	if const_val is not None:
+		clauses = (Clause(f'{const_val}', size = T.size),)
 
 	if addr is Address_modes.DEREF:
 		if T.deref in (None, ANY_TYPE):
 			err(f'Cannot dereference a value of type {T}')
-		if len(clauses) != 1: err('Invalid pointer size')
 
-		clause, = clauses
 		size = T.deref.size
-		split_sizes = split_size(size)
+		if expected_split is None:
+			split_sizes = split_size(size)
+			print(f'NEW SPLIT:     {split_sizes} for {token!r}')
+		else:
+			split_sizes = expected_split
+			print(f'DEFAULT SPLIT: {split_sizes} for {token!r}')
+
+		if len(clauses) != 1:
+			err(f'Trying to deref size with clauses: {clauses}')
+
+		[clause] = clauses
 
 		if len(split_sizes) >= len(dest_reg_fmts):
 			err(f'Unsupported dereference size {size} for {T.deref}')
 
 		# Use a reg not used by the dereference
-		ptr_reg = dest_reg_fmts[len(split_sizes)]
+		ptr_reg = dest_reg_fmts[len(split_sizes)-1]
 
 		insts.append(
 			f'mov {ptr_reg:{clause.size}}, {clause.asm_str}'
@@ -1659,7 +1699,7 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 		offset = 0
 		clauses = []
-		output(';', dest_reg_fmts, size, split_sizes)
+		# output(';', dest_reg_fmts, size, split_sizes)
 		for sub_size in split_sizes:
 			clauses.append(Clause.ref(
 				f'{ptr_reg:{T.size}} + {offset}',
@@ -1721,10 +1761,29 @@ def parse_token(token: 'stripped', types, *, variables, virtual=False) \
 
 			*get_operator_insts(operator, o_clause, o_type)
 		]
-		clauses = ()
+
+		if isinstance(T, Flag):
+			clauses = ()
+		else:
+			clauses = (Clause(f'{{0:{T.size}}}', size=T.size),)
 		# print(f'OPERATOR {operator!r} using {T} and {o_type} ({addr = }) gives... ', end='')
 		# print(T)
 	return insts, clauses, T
+
+def gen_real_insts(insts, regs, clauses=(), *, dest=None) -> list[Clause]:
+	# output(f'; Actualising token insts. {regs = }')
+	# output(f'; {regs = }')
+	# output(f'; {clauses = }')
+	for inst in insts: output(inst.format(*regs))
+
+	print('Actualising clauses:', clauses)
+	clauses = [
+		Clause(c.asm_str.format(*regs), size=c.size)
+		for c in clauses
+	]
+
+	if dest is None: return clauses
+	move(dest, clauses, regs[len(clauses):])
 
 def eval_const(exp, types, *, variables) -> Const:
 	exp = exp.strip()
@@ -1931,7 +1990,8 @@ def eval_const(exp, types, *, variables) -> Const:
 
 
 # muddles rbx if dest_reg is Flag
-def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
+def parse_exp(exp: 'stripped', *, fn_queue, variables) \
+	-> (list[str], list[Clause], Type):
 	# TODO: return const when regs not required
 
 	# extract call_function(fn, args)
@@ -1952,93 +2012,82 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 	if exp_type is Exp_type.TOKEN:
 		# [x] T flag, dest_reg flag -> return T
 
-		insts, exp_clauses, T = parse_token(exp, fn_types, variables=variables)
-		# print('Token', repr(exp), 'has a type of', T)
+		return parse_token(exp, fn_types, variables=variables)
+		# insts, exp_clauses, T = token.insts, token.clauses, token.type
+		# # print('Token', repr(exp), 'has a type of', T)
 
-		if isinstance(T, Flag):
-			# print('Parsed flag token', exp, '->', T)
-			for inst in insts:
-				output(inst.format(*standard_dest_regs))
-				# err('[Internal error] Multiple instructions from a flag token')
+		# if isinstance(T, Flag):
+		# 	# print('Parsed flag token', exp, '->', T)
+		# 	for inst in insts:
+		# 		output(inst.format(*standard_dest_regs))
+		# 		# err('[Internal error] Multiple instructions from a flag token')
 
-			if dest_regs is Flag: return T  # returns flag if relational
+		# 	if T.value is Flag.ALWAYS:  exp_clauses = (Clause('1'),)
+		# 	elif T.value is Flag.NEVER: exp_clauses = (Clause('0'),)
+		# 	else: return Token((), T)
 
-			if T.value is Flag.ALWAYS:  exp_clauses = (Clause('1'),)
-			elif T.value is Flag.NEVER: exp_clauses = (Clause('0'),)
+		# 	T = UNSPECIFIED_INT
 
-			# [x] T flag, dest_reg val -> setcc; ALWAYS/NEVER converted to values
-			else:
-				output(f'set{T.name} {dest_regs[0].encode(size=8)}')
-				for dest_reg in dest_regs[1:]:
-					output(
-						f'xor {dest_reg.encode(size=8)}, '
-						f'{dest_reg.encode(size=8)}'
-					)
+		# size = T.size
 
-				return UNSPECIFIED_INT
+		# # [x] T val, dest_reg val -> mov
+		# if dest_regs is not Flag:
+		# 	# This is important. This is responsible for assignment.
+		# 	# if len(exp_clauses) > len(dest_regs):
+		# 	# 	err(
+		# 	# 		'[Internal error] Unsupported variable size: '
+		# 	# 		f'{T.size}. {exp_clauses = }'
+		# 	# 	)
+		# 	# if not dest_regs:
+		# 	# 	err(f'[Internal error] No dest_regs for expression {exp!r}')
 
-			T = UNSPECIFIED_INT
+		# 	for inst in insts:
+		# 		output(inst.format(*dest_regs))
 
-		size = Type.get_size(T)
+		# 	output(';', dest_regs, exp_clauses, size)
+		# 	for dest_reg, sub_clause in zip(dest_regs, exp_clauses):
+		# 		# print('Moving into rax', T, size)
+		# 		output(
+		# 			f'mov {dest_reg:{sub_clause.size}}, '
+		# 			f'''{sub_clause.asm_str.format(*dest_regs)}'''
+		# 		)
 
-		# [x] T val, dest_reg val -> mov
-		if dest_regs is not Flag:
-			# This is important. This is responsible for assignment.
-			if len(exp_clauses) > len(dest_regs):
-				err(
-					'[Internal error] Unsupported variable size: '
-					f'{Type.get_size(T)}. {exp_clauses = }'
-				)
-			if not dest_regs:
-				err(f'[Internal error] No dest_regs for expression {exp!r}')
+		# 	return T
+		# else:
+		# 	# [ ] T val, dest_reg flag -> test
 
-			for inst in insts:
-				output(inst.format(*dest_regs))
+		# 	if len(exp_clauses) > 1:
+		# 		# TODO: if arr
+		# 		err('Non-standard sized expressions not allowed as a condition')
 
-			output(';', dest_regs, exp_clauses, size)
-			for dest_reg, sub_clause in zip(dest_regs, exp_clauses):
-				# print('Moving into rax', T, size)
-				output(
-					f'mov {dest_reg:{sub_clause.size}}, '
-					f'''{sub_clause.asm_str.format(*dest_regs)}'''
-				)
+		# 	if len(exp_clauses) == 1:
+		# 		exp_clause, = exp_clauses
+		# 	else:
+		# 		exp_clause = None
 
-			return T
-		else:
-			# [ ] T val, dest_reg flag -> test
+		# 	for inst in insts:
+		# 		output(
+		# 			inst.format(*standard_dest_regs)
+		# 		)
 
-			if len(exp_clauses) > 1:
-				# TODO: if arr
-				err('Non-standard sized expressions not allowed as a condition')
+		# 	if T is UNSPECIFIED_INT and exp_clause.asm_str.isdigit():
+		# 		val = int(exp_clause.asm_str)
+		# 		if val: return Flag.ALWAYS
+		# 		else: return Flag.NEVER
 
-			if len(exp_clauses) == 1:
-				exp_clause, = exp_clauses
-			else:
-				exp_clause = None
-
-			for inst in insts:
-				output(
-					inst.format(*standard_dest_regs)
-				)
-
-			if T is UNSPECIFIED_INT and exp_clause.asm_str.isdigit():
-				val = int(exp_clause.asm_str)
-				if val: return Flag.ALWAYS
-				else: return Flag.NEVER
-
-			elif T is STR_TYPE:
-				# TODO: account for null strings
-				return Flag.ALWAYS
-			elif exp_clause is not None:
-				# works only if exp_clause can be a dest
-				output(f'''test {exp_clause.asm_str.format(
-						*standard_dest_regs,
-					)}, -1''')
-				return Flag.nz
-			else:
-				output(f'test {{0:{T.size}}}, {{0:{T.size}}}'
-					.format(Register.a))
-				return Flag.nz
+		# 	elif T is STR_TYPE:
+		# 		# TODO: account for null strings
+		# 		return Flag.ALWAYS
+		# 	elif exp_clause is not None:
+		# 		# works only if exp_clause can be a dest
+		# 		output(f'''test {exp_clause.asm_str.format(
+		# 				*standard_dest_regs,
+		# 			)}, -1''')
+		# 		return Flag.nz
+		# 	else:
+		# 		output(f'test {{0:{T.size}}}, {{0:{T.size}}}'
+		# 			.format(Register.a))
+		# 		return Flag.nz
 
 	# print('Parse exp', repr(exp))
 
@@ -2108,17 +2157,22 @@ def parse_exp(exp: 'stripped', *, dest_regs, fn_queue, variables) -> Type:
 			ret_type = ret_type.deref
 			output(f'mov {Register.a:{ret_type.size}}, {size_prefix(ret_type.size)} [rax]')
 
-	# print(f'{dest_reg = }')
-	if dest_regs is Flag:
-		# output is in rax
-		# print('Classified as a flag')
-		output(f'test {Register.a:{ret_type.size}}, '
-			f'{Register.a:{ret_type.size}}')
-		return Flag.nz
+	# # print(f'{dest_reg = }')
+	# if dest_regs is Flag:
+	# 	# output is in rax
+	# 	# print('Classified as a flag')
+	# 	output(f'test {Register.a:{ret_type.size}}, '
+	# 		f'{Register.a:{ret_type.size}}')
+	# 	return Flag.nz
 
 	# print('Not classified as a flag')
 
-	return ret_type
+	clauses = tuple(
+		Clause(f'{reg:{size}}', size=size)
+		for reg, size in zip(dest_reg_fmts, split_size(ret_type.size))
+	)
+
+	return [], clauses, ret_type
 
 
 # args_str must include the starting bracket
@@ -2163,12 +2217,6 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		insts, clauses, T = parse_token(arg, fn_types, variables=variables)
 		# print(f'Type of {arg!r} is {T}')
 
-		# TODO: What if I want an integer of a different type?
-
-		for inst in insts:
-			# print('FORMATTING INST', inst, 'with', arg_regs)
-			output(inst.format(*arg_regs))
-
 		if len(clauses) > 1:
 			err(
 				'[Internal Error] Only register sized arguments are supported. '
@@ -2178,8 +2226,10 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		if clauses:
 			[clause] = clauses
 			reg_str = arg_reg.encode(size=clause.size)
-			# print(f'FORMATTING {clause.asm_str!r} with {len(standard_dest_regs)} params {standard_dest_regs}')
-			output(f'mov {reg_str}, {clause.asm_str.format(*standard_dest_regs)}')
+			gen_real_insts(
+				insts, arg_regs[len(arg_types):], clauses,
+				dest=[Clause(reg_str, size=clause.size)]
+			)
 
 		arg_types.append(T)
 
@@ -2434,6 +2484,76 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 
 	err(f'Unsupported operator {operator!r} between {l_type} and {r_type}')
 
+def move(dst_clauses, src_clauses, aux_regs: tuple[Register, ...]):
+	'''
+	Moves values between two sets of clauses
+	Also supports moving between (some permutations of) flags
+	'''
+
+	# NOTE: Peeks into clause.asm_str using isdigit() and endswith(']')
+
+	# TODO: Convert between size distributions (it's gonna get big)
+	if len(src_clauses) > len(dst_clauses):
+		err(f'[Internal Error] Assignment does not fit '
+			f'(mov {[d.size for d in dst_clauses]}, {[s.size for s in src_clauses]})')
+	n = len(src_clauses)
+	for i, (dst, src) in enumerate(zip(dst_clauses, src_clauses)):
+		# print(f'mov {dst} from {src}')
+
+		if isinstance(src, Flag):
+			if not isinstance(dst, Flag):
+				err('Assigning from status flags not yet supported')
+			if src != dst:
+				err('Assigning between different status flags not yet supported')
+			continue  # Nothing to do
+
+		if isinstance(dst, Flag):
+			if dst not in (Flag.nz, Flag.z):
+				err(f'[Internal Error] Unsupported destination flag {dst}')
+			if src.asm_str.isdigit():
+				err('[Internal Error] Constant flag not checked before')
+
+			if src.asm_str.endswith(']'):
+				# err(f'Unsupported flag conversion for {src.asm_str!r}')
+				output(f'test {src.asm_str}, -1')
+			else:
+				output(f'test {src.asm_str}, {src.asm_str}')
+			continue
+
+		if dst.size != src.size:
+			if i < n-1:
+				# d_sizes = [d.size for d in dst_clauses]
+				# s_sizes = [s.size for s in src_clauses]
+				# err(f'Clause redistribution not yet supported (mov {d_sizes}, {s_sizes})')
+				err(f'Clause redistribution not yet supported (mov {dst_clauses}, {src_clauses})')
+
+			if not aux_regs:
+				err(
+					f'Not enough registers for clause redistribution '
+					f'(mov {dst_clauses}, {src_clauses})'
+				)
+
+			# Use intermediate register
+			if src.asm_str.isdigit():
+				src = Clause(src.asm_str, size=dst.size)
+			else:
+				output(f'mov {aux_regs[0]:{src.size}}, {src.asm_str}')
+				src = Clause(f'{aux_regs[0]:{dst.size}}', size=dst.size)
+
+		if dst.asm_str == src.asm_str: continue  # Don't codegen if same clause
+
+		if dst.asm_str.endswith(']') and src.asm_str.endswith(']'):
+			if not aux_regs:
+				err(
+					'Not enough registers for mem to mem move '
+					f'(mov {dst_clauses}, {src_clauses})'
+				)
+
+			output(f'mov {aux_regs[0]:{src.size}}, {src.asm_str}')
+			src = Clause(f'{aux_regs[0]:{dst.size}}', size=dst.size)
+
+		output(f'mov {dst.asm_str}, {src.asm_str}')
+
 def get_string_label(string, strings):
 	if string in strings: return strings[string]
 	label = f'_s{len(strings)}'
@@ -2684,6 +2804,7 @@ if __name__ == '__main__':
 		for var in variables.values():
 			if isinstance(var, Const): continue
 			var.offset = offset - var.offset
+			output(f'; {var.name} is at offset {var.offset}')
 
 		# Populate arguments
 		if len(fn.args) > len(arg_regs):
@@ -2691,7 +2812,7 @@ if __name__ == '__main__':
 		for (_, argname), arg_reg in zip(fn.args, arg_regs):
 			arg = variables[argname]
 			reg_str = arg_reg.encode(size=arg.type.size)
-			output(f'mov {size_prefix(arg.type.size)} [rsp + {arg.offset}], ',
+			output(f'mov {size_prefix(arg.type.size)} [rsp + {arg.offset}],',
 				reg_str)
 
 		ctrl_stack = [Ctrl(0, Branch.FUNCTION)]
@@ -2721,9 +2842,18 @@ if __name__ == '__main__':
 				else:
 					# We don't use the expected size
 					# for the case of returning UNSPECIFIED_INT
-					ret_type = parse_exp(match[2].strip(),
-						dest_regs = dest_regs, fn_queue = fn_queue,
+					insts, clauses, ret_type = parse_exp(match[2].strip(),
+						fn_queue = fn_queue,
 						variables = variables)
+					gen_real_insts(
+						insts,
+						standard_dest_regs,
+						clauses,
+						dest = [
+						Clause(reg.encode(size=size), size=size) for reg, size
+						in zip(standard_dest_regs, split_size(ret_type.size))
+						],
+					)
 
 				parse_type_result = parse_type(fn.ret_type, fn_types,
 					variables=variables)
@@ -2758,10 +2888,28 @@ if __name__ == '__main__':
 				output(f'{ctrl.label}:')
 				ctrl_stack.append(ctrl)
 
-				ret_flag = parse_exp(match[2].strip(),
-					dest_regs = Flag, fn_queue = fn_queue,
-					variables = variables
+				insts, clauses, T = parse_exp(match[2].strip(),
+					fn_queue = fn_queue, variables = variables
 				)
+
+				if isinstance(T, Flag):
+					ret_flag = T
+					dest = [ret_flag]
+				elif len(clauses) != 1:
+					err('Non-standard sizes not supported in while condition')
+				elif clauses[0].asm_str.isdigit():
+					val = int(clauses[0].asm_str)
+					if val: ret_flag = Flag.ALWAYS
+					else: ret_flag = Flag.NEVER
+					dest = None
+				else:
+					ret_flag = Flag.nz
+					dest = [ret_flag]
+				real_clauses = gen_real_insts(insts, standard_dest_regs, clauses, dest=dest)
+				if dest is None:
+					print('Unprocessed clauses:', real_clauses)
+
+
 				if ret_flag is Flag.NEVER:
 					output(f'jmp _E{ctrl_no}')
 				elif ret_flag is not Flag.ALWAYS:
@@ -2772,11 +2920,15 @@ if __name__ == '__main__':
 				ctrl = Ctrl(ctrl_no, 0)
 				ctrl_stack.append(ctrl)
 
-				# TODO: parse_exp() returns a Flag object if dest_reg is flags
-				ret_flag = parse_exp(match[2].strip(),
-					dest_regs = Flag, fn_queue = fn_queue,
-					variables = variables
+				insts, clauses, T = parse_exp(match[2].strip(),
+					fn_queue = fn_queue, variables = variables
 				)
+
+				if isinstance(T, Flag):
+					ret_flag = T
+				else:
+					ret_flag = Flag.nz
+				gen_real_insts(insts, standard_dest_regs, clauses, dest=[ret_flag])
 
 				if ret_flag is Flag.NEVER:
 					output(f'jmp _E{ctrl_no}_1')
@@ -2794,12 +2946,15 @@ if __name__ == '__main__':
 				output(f'jmp _END{ctrl.ctrl_no}')
 				output(f'_E{ctrl.ctrl_no}_{ctrl.branch}:')
 
-
-				# TODO: parse_exp() returns a Flag object if dest_reg is flags
-				ret_flag = parse_exp(match[2].strip(),
-					dest_regs = Flag, fn_queue = fn_queue,
-					variables = variables
+				insts, clauses, T = parse_exp(match[2].strip(),
+					fn_queue = fn_queue, variables = variables
 				)
+
+				if isinstance(T, Flag):
+					ret_flag = T
+				else:
+					ret_flag = Flag.nz
+				gen_real_insts(insts, standard_dest_regs, clauses, dest=[ret_flag])
 
 				if ret_flag is Flag.NEVER:
 					output(f'jmp _E{ctrl.ctrl_no}_{ctrl.branch+1}')
@@ -2873,9 +3028,11 @@ if __name__ == '__main__':
 					exp = line
 					dest = None
 
-				ret_type = parse_exp(exp.strip(),
-					dest_regs = standard_dest_regs, fn_queue = fn_queue,
+				# ret_type = token.type
+				insts, clauses, ret_type = parse_exp(exp.strip(),
+					fn_queue = fn_queue,
 					variables = variables)
+				rhs_clauses = gen_real_insts(insts, standard_dest_regs, clauses)
 
 				if dest is not None:
 					index = Patterns.find_through_strings(dest, '[')
@@ -2886,43 +3043,57 @@ if __name__ == '__main__':
 					else:
 						dest_token = dest
 
+					print('ASSIGNMENT', dest_token, '<-', exp)
 					insts, dest_clauses, dest_type = parse_token(
-						dest_token, fn_types, variables = variables
+						dest_token, fn_types, variables = variables,
+						expected_split = [c.size for c in clauses]
 					)
 
-					if dest_type is UNSPECIFIED_INT or not dest_clauses:
-						err(f'Cannot assign to {dest}')
+					if index == -1:
+						if dest_type is UNSPECIFIED_INT or not dest_clauses:
+							err(f'Cannot assign to {dest}')
 
-					if index != -1:
-						first_arg = arg_regs[0]
-						second_arg = arg_regs[1]
+						if (
+							ret_type is not dest_type
+							and not (ret_type is UNSPECIFIED_INT and dest_type.is_int())
+						):
+							err(f'Cannot assign {ret_type} into '
+								f'variable {dest} of {dest_type}')
 
-						if len(dest_clauses) != 1:
-							err(f"Item assignment does not support non-standard sizes yet ({len(dest_clauses)} clauses)")
-
-						dest_clause, = dest_clauses
-
-						for inst in insts:
-							output(inst.format(first_arg))
-
-						# TODO: Use big moves
-						# TODO: I need a convenience function
-						# so I can use it without thinking
-						# and I don't make mistakes.
-						# But first, I need to figure out
-						# what it means to not make a mistake.
-
-						# print(f'{dest_clause = }')
-						output(
-							f'mov {first_arg:{dest_clause.size}}, '
-							f'''{dest_clause.asm_str.format(
-								first_arg, second_arg
-							)}'''
+						dest_regs = standard_dest_regs[len(rhs_clauses):]
+						dest_clauses = gen_real_insts(
+							insts, dest_regs, dest_clauses
 						)
-						# print(f'Moving into {dest_clause!r}')
-						ret_size = ret_type.size
-						output(f'mov {second_arg:{ret_size}}, '
-							f'{Register.a:{ret_size}}')
+						output(f'; {rhs_clauses  = }')
+						output(f'; {dest_clauses = }')
+						aux_regs = dest_regs[len(dest_clauses):]
+						move(dest_clauses, rhs_clauses, aux_regs)
+
+					else:
+						if len(dest_clauses) != 1:
+							err(f'Item assignment does not support '
+								f'non-standard sizes yet '
+								f'(lhs uses {len(dest_clauses)} clauses)')
+
+						if len(rhs_clauses) != 1:
+							err(f'Item assignment does not support '
+								f'non-standard sizes yet '
+								f'(rhs uses {len(rhs_clauses)} clauses)')
+
+						[dest_clause] = dest_clauses
+						[rhs_clause]  = rhs_clauses
+						first_arg = Clause(
+							f'{arg_regs[0]:{dest_clause.size}}', dest_clause.size
+						)
+						second_arg = Clause(
+							f'{arg_regs[1]:{rhs_clause.size}}', rhs_clause.size
+						)
+
+						# rhs goes to second arg, iterable goes to first
+						move([second_arg], rhs_clauses, aux_regs=standard_dest_regs[1:])
+						dest_clauses = gen_real_insts(
+							insts, arg_regs[2:], dest_clauses, dest=[first_arg]
+						)
 
 						if '_setitem' in dest_type.methods:
 							caller_type = dest_type
@@ -2939,38 +3110,6 @@ if __name__ == '__main__':
 
 						if setitem_result is not VOID_TYPE:
 							err('_setitem() must return void')
-
-					else:
-						if (
-							ret_type is not dest_type
-							and not (ret_type is UNSPECIFIED_INT and dest_type.is_int())
-						):
-							err(f'Cannot assign {ret_type} into '
-								f'variable {dest} of {dest_type}')
-
-						# IMPORTANT: Base assignment logic
-						# Possibly unstable now with bigger variable support
-
-						# the value of the expression is in standard_dest_regs
-						for inst in insts:
-							output(
-								inst.format(*standard_dest_regs)
-							)
-
-						# ret_sizes_split = split_size(T.get_size(ret_type))
-						# if len(dest_clauses) + len(ret_sizes_split) > len(standard_dest_regs):
-						# 	err(f'Assignment is too complex {dest_clauses = }, ret: {ret_sizes_split}')
-
-						output(f'; Moving into {dest_clauses!r}')
-						for dest_reg, dest_clause in zip(
-							standard_dest_regs,
-							dest_clauses,
-						):
-							# print(f'FORMATTING {dest_clause.asm_str!r} with {len(standard_dest_regs)} params {standard_dest_regs}')
-							output(
-								f'mov {dest_clause.asm_str.format(*standard_dest_regs)}, '
-								f'{dest_reg:{dest_clause.size}}'
-							)
 
 				output()
 
