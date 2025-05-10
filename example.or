@@ -474,12 +474,14 @@ fn noop A: A x -> A
 end
 
 fn dictionaries
-	puts("\nDICT START")
+	println("DICT START")
 	let dict &Dict str int
 	dict = Dict str int.new(1193)
+	println("Created Dict")
 
 	let index int
 	index = Dict str int.index(dict, "new key")
+	println("Found index")
 
 	Dict str int._setitem(dict, 5, "new key")
 
@@ -946,31 +948,32 @@ import snake "snake_game.or"
 fn main
 	println("Hello, World!")
 
-	basics()
-	operations()
-	control_flow()
-	pointers()
-	alloc_stuff()
-	linked_lists()
-	polymorphic_structs()
-	classmethods()
-	array_index()
+	// basics()
+	// operations()
+	// control_flow()
+	// pointers()
+	// alloc_stuff()
+	// linked_lists()
+	// polymorphic_structs()
+	// classmethods()
+	// array_index()
 	dictionaries()
-	streq_tests()
-	mul_tests()
-	more_meta()
-	// scanf_test()
-	passing_args()
-	nested_types()
-	imports()
-	generic_prints()
-	constants()
-	big_moves()
-	enums()
+	// streq_tests()
+	// mul_tests()
+	// more_meta()
+	// // scanf_test()
+	// passing_args()
+	// nested_types()
+	// imports()
+	// generic_prints()
+	// constants()
+	// big_moves()
+	// enums()
 
-	sdl_tests()
-	snake.snake_game()
+	// sdl_tests()
+	// snake.snake_game()
 
-	SDL.SDL_Quit()
+	// SDL.SDL_Quit()
+	println("NO CRASHES!")
 end
 export SDL_main main  // For SDL to work

@@ -93,6 +93,7 @@ if len(argv)<3: argv.append(file_name+'.asm')
 PTR_SIZE = 8
 crlf = int(Shared.arch is Arch.win64)
 
+print('Output asm file:', argv[2])
 arg_infile = open(argv[1])
 Shared.out = open(argv[2], 'w')
 def output(*args, file = Shared.out, **kwargs):
@@ -238,6 +239,13 @@ class Function_header:
 				if caller_type.deref is not None:
 					caller_type = caller_type.deref
 					if fn_name not in caller_type.methods:
+						if caller_type.deref is not None:
+							err(
+								f'{caller_type} has no method named {fn_name!r}. '
+								f'(Classmethod are limited to '
+								f'one level of implicit dereference. '
+								f'Use :deref for more levels)'
+							)
 						err(f'{caller_type} has no method named {fn_name!r}')
 				else:
 					err(f'{caller_type} has no method named {fn_name!r}')
@@ -258,6 +266,9 @@ class Function_header:
 			f'in {self.infile and self.infile.name!r} '
 			f'at line {self.line_no} (tell = {self.tell})>'
 		)
+
+	def __str__(self):
+		return self.name
 
 	def add_sub(self, key: tuple[str], typeargs = ()) -> 'Function_instance':
 		if len(key) != len(self.typeargs):
@@ -329,7 +340,7 @@ class Clause:
 	def __init__(self, asm_str, size):
 		if size not in (1, 2, 4, 8): err(f'Invalid clause size: {size}')
 
-		print('NEW CLAUSE', asm_str, size)
+		# print('NEW CLAUSE', asm_str, size)
 
 		self.asm_str = asm_str
 		self.size = size
@@ -694,15 +705,15 @@ class Type:
 						variables=curr_type.fields
 					)
 
-					if not isinstance(parse_type_result, ParseTypeError):
+					if isinstance(parse_type_result, ParseTypeError):
+						print(f'In {T.strip()!r}, {parse_type_result}')
+					else:
 						if len(parse_type_result) != 1:
 							err('Field declaration expects exactly 1 type. '
 								f'{T!r} resolves to '
 								f'{len(parse_type_result)} types.')
 						T, = parse_type_result
-						# print('GOT REAL TYPE', T)
-					# else:
-					# 	print(f'{T.strip()!r} is not defined.')
+						print('GOT REAL TYPE', T)
 
 					if curr_type.is_enum:
 						offset = 0
@@ -732,17 +743,17 @@ class Type:
 					# print(f'  Created a field {name!r} of {T}')
 					if curr_type.size is not None:
 						if not isinstance(T, Type):
-							# print('curr_type.size:', f'Adding {T.size} to size')
 							curr_type.size = None
+							print(f'{T} is undefined. Setting size of {curr_type} to None')
 						elif curr_type.is_enum:
 							curr_type.size = max(curr_type.size, T.size)
 						elif T.size is None:
 							err(f'{T} is polymorphic. Cannot instantiate it without type arguments.')
 						else:
-							# print(f'{curr_type}: adding field {name} ({T}) (size = {T.size})')
+							print(f'{curr_type}: adding field {name} ({T}) (size = {T.size})')
 							curr_type.size += T.size
-					# else:
-					# 	print('curr_type.size:', 'Size is already None')
+					else:
+						print('curr_type.size:', 'Size is already None')
 
 				elif match[1] == 'const':
 					# print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
@@ -771,7 +782,13 @@ class Type:
 
 					if curr_type.is_enum:
 						if curr_type.size is None:
-							err('Polymorphic enums are not yet supported.')
+							T = None
+							for field in curr_type.fields.values():
+								if isinstance(field.type, str):
+									T = field.type
+									break
+							err('Polymorphic enums are not yet supported. '
+								f'(interpreting {T!r} as polymorphic)')
 
 						# print('Getting discr size of', curr_type)
 						if curr_type.last_field_id is not None:
@@ -791,7 +808,7 @@ class Type:
 					# else:
 					# 	print('END TYPE', curr_type)
 
-					# print(f'{curr_type} has a size of {curr_type.size}')
+					print(f'{curr_type} created with size of {curr_type.size}')
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = self
@@ -906,12 +923,12 @@ class Type:
 		type_queue = [self]
 		out_mappings = {}
 		types = module.children
-		# print('Matching Pattern', self, type_str)
+		print('Matching Pattern', self, type_str)
 
 		for token in type_str.split():
 			if not type_queue:
-				err(f'Could not match {token!r} from {type_str!r} '
-					f'to any type in {self}. '
+				err(f'Argument of {self} was completely matched but '
+					f'{token!r} in {type_str!r} could not be mapped. '
 					'(Note: Type arguments cannot take parameters)')
 				# It could work if only the first token is a parameter
 
@@ -945,15 +962,23 @@ class Type:
 
 				# expected_type.parent is the polymorphic type
 				if evaluated_token not in (ANY_TYPE, expected_type.parent):
-					err(f'{qual_token!r} in function signature evaluated to {evaluated_token}, '
-						f'but argument of {expected_type} was passed.')
+					err(
+						f'Function expected {evaluated_token}, '
+						f'got argument with {expected_type}. '
+						f'({qual_token!r} in {type_str!r})'
+					)
+					# err(
+					# 	f'{qual_token!r} in {type_str!r} from function signature '
+					# 	f'would evaluate to an instance {evaluated_token}, '
+					# 	f'but the argument {self} expected it to be {expected_type}.'
+					# )
 
 				type_queue.extend(expected_type.args)
 
 			# token is a polymorphic type
 			elif children:
 				# TODO: suppress error if a mapping is already made
-				err('Children of polymorphic types are not yet supported')
+				err(f'Unsupported match of {expected_type} to polymorphic type argument {token!r}')
 
 			elif token not in out_mappings:
 				# print(f'MATCH {token!r} to {expected_type}')
@@ -1151,12 +1176,33 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 		# print(f'Type meta:  {token = }, {field = }')
 
 		if field == 'type':
-			_insts, _clauses, exp_type = parse_token(token, types,
+			_insts, _clauses, T = parse_token(token, types,
 				variables=variables, virtual=True)
+		elif field == 'deref':
+			parse_type_result = parse_type(token, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'Error while parsing {token!r}: {parse_type_result}')
+			if len(parse_type_result) != 1:
+				err(
+					'Derefencing a type expects exactly 1 type. '
+					f'{token!r} yields {len(parse_type_result)} types')
+			[T] = parse_type_result
+			if T.deref is None:
+				err(f'{T} cannot be dereferenced')
+			T = T.deref
+		elif field == 'ref':
+			parse_type_result = parse_type(token, types, variables=variables)
+			if isinstance(parse_type_result, ParseTypeError):
+				err(f'Error while parsing {token!r}: {parse_type_result}')
+			if len(parse_type_result) != 1:
+				err(
+					'Derefencing a type expects exactly 1 type. '
+					f'{token!r} yields {len(parse_type_result)} types')
+			[T] = parse_type_result
+			T = T.pointer()
 		else:
 			err('Unsupported metadata field. '
 				f"':{field}' does not yield a type.")
-		T = exp_type
 		if T is UNSPECIFIED_INT:
 			T = INT_TYPE
 		elif isinstance(T, Flag):
@@ -1253,7 +1299,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 	# (instructions to get the value of token, expression, type)
 
-	# print('Parse token', repr(token))
+	print(f'Parse token {token!r}. {expected_split = }')
 
 	idx = Patterns.find_through_strings(token, '{')
 	if idx != -1:
@@ -1436,7 +1482,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 			# TODO: `clause.deref` instead of `clauses`
 			if clause.size != size:
-				err(f'Cannot get discriminator for enum {T} with size {T.size}')
+				err(f'Cannot get discriminator for enum {exp_type} with size {exp_type.size}')
 
 			if expected_split is not None: err(f'Cannot force a split for {token!r}')
 			clauses = (clause,)
@@ -1516,7 +1562,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 								f'for {T} of size {T.size}'
 							)
 				clauses = []
-				print('CREATING CLAUSES FOR', sizes)
+				# print('CREATING CLAUSES FOR', sizes)
 				for size in sizes:
 					clauses.append(Clause(
 						f'{size_prefix(size)} [rsp + {offset}]', size=size
@@ -1596,11 +1642,14 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				sizes = split_size(T.size)
 			else:
 				sizes = expected_split
+				if isinstance(T, str):
+					err('[Internal Error] Found an instance '
+						f'of a base polymorphic type')
 				if sum(expected_split) > T.size:
 					sizes[-1] -= sum(expected_split)-T.size
 					if sizes[-1] not in (1, 2, 4, 8):
 						err(
-							f'Cannot expect {expected_split} '
+							f'Bad rhs size distribution {expected_split} '
 							f'for {T} of size {T.size}'
 						)
 
@@ -1677,10 +1726,10 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 		size = T.deref.size
 		if expected_split is None:
 			split_sizes = split_size(size)
-			print(f'NEW SPLIT:     {split_sizes} for {token!r}')
+			# print(f'NEW SPLIT:     {split_sizes} for {token!r}')
 		else:
 			split_sizes = expected_split
-			print(f'DEFAULT SPLIT: {split_sizes} for {token!r}')
+			# print(f'DEFAULT SPLIT: {split_sizes} for {token!r}')
 
 		if len(clauses) != 1:
 			err(f'Trying to deref size with clauses: {clauses}')
@@ -1723,7 +1772,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 		ctrl_no = Ctrl.next()
 
-		# print(f'{Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
+		output(f'; {Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
 
 		insts += [
 			# preserves flag state
@@ -1771,12 +1820,14 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 	return insts, clauses, T
 
 def gen_real_insts(insts, regs, clauses=(), *, dest=None) -> list[Clause]:
-	# output(f'; Actualising token insts. {regs = }')
-	# output(f'; {regs = }')
-	# output(f'; {clauses = }')
-	for inst in insts: output(inst.format(*regs))
+	output(f'; Actualising token insts. {regs = }')
+	output(f'; {regs = }')
+	output(f'; {clauses = }')
+	for inst in insts:
+		output(';', repr(inst), '%', regs)
+		output(inst.format(*regs))
 
-	print('Actualising clauses:', clauses)
+	# print('Actualising clauses:', clauses)
 	clauses = [
 		Clause(c.asm_str.format(*regs), size=c.size)
 		for c in clauses
@@ -2167,6 +2218,8 @@ def parse_exp(exp: 'stripped', *, fn_queue, variables) \
 
 	# print('Not classified as a flag')
 
+
+	print('Parse exp clauses function call generation using', ret_type)
 	clauses = tuple(
 		Clause(f'{reg:{size}}', size=size)
 		for reg, size in zip(dest_reg_fmts, split_size(ret_type.size))
@@ -2214,10 +2267,11 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 
 		# print('Arg:', arg)
 
+		# TODO: Move this to after type-checking
 		insts, clauses, T = parse_token(arg, fn_types, variables=variables)
 		# print(f'Type of {arg!r} is {T}')
 
-		if len(clauses) > 1:
+		if len(clauses) > 1:  # This check should be while type-checking, after figuring out the types
 			err(
 				'[Internal Error] Only register sized arguments are supported. '
 				f'({arg!r} has a size of {T.size})'
@@ -2246,7 +2300,7 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 		fl = len(fn_header.args)
 		al = len(arg_types)
 
-		err(f'{fn_header!r} expects exactly '
+		err(f'{fn_header} expects exactly '
 			f'{fl} argument{"s" * (fl != 1)}, '
 			f'but {al} {"were" if al != 1 else "was"} provided')
 
@@ -2362,8 +2416,9 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 
 def get_operator_insts(operator, operand_clause, operand_type):
 	# print(f'{Shared.line_no}: OPERATION {operator} USING {operand_type} (size = {operand_clause.size})')
-	if operand_type.size != operand_clause.size:
-		err('[INTERNAL ERROR] clause and type size do not match')
+
+	# if operand_type.size != operand_clause.size:
+	# 	err('[INTERNAL ERROR] clause and type size do not match')
 	# Should not muddle registers. So we can't call functions.
 
 	# I don't put any constraints. Makes it unsafe, but also flexible.
@@ -2378,7 +2433,7 @@ def get_operator_insts(operator, operand_clause, operand_type):
 	elif operator in ('==', '!='):
 		# TODO: get_operator_insts() should take type of both operands
 
-		if operand_type is STR_TYPE:
+		if operand_type is STR_TYPE:  # Muddles registers
 			return [
 				f'mov {arg_regs[0]:8}, {{0:8}}',
 				f'mov {arg_regs[1]:{operand_clause.size}}, {operand_clause.asm_str}',
@@ -2699,6 +2754,11 @@ if __name__ == '__main__':
 
 		fn_types = curr_mod.children | fn_instance.type_mappings
 
+		Shared.infile = fn.infile
+		Shared.line_no = fn.line_no
+		Shared.line = f'fn {fn}'  # For errors
+		Shared.infile.seek(fn.tell)
+
 		fn_instance.init_args_vars(curr_mod.children)
 		offset = fn_instance.offset
 
@@ -2714,9 +2774,6 @@ if __name__ == '__main__':
 
 		scope_level = 1
 
-		Shared.infile = fn.infile
-
-		Shared.infile.seek(fn.tell)
 		for Shared.line_no, Shared.line in enumerate(Shared.infile, fn.line_no+1):
 			# let x type
 			# Variable{name, offset, type}
@@ -2758,6 +2815,9 @@ if __name__ == '__main__':
 
 				if T is ANY_TYPE:
 					err("A variable of type 'any' must be a pointer")
+
+				if T.size is None:
+					err(f'Trying to instantiate with unsized type {T}')
 
 				offset += T.size
 				local_variables.add(name)
@@ -2906,8 +2966,8 @@ if __name__ == '__main__':
 					ret_flag = Flag.nz
 					dest = [ret_flag]
 				real_clauses = gen_real_insts(insts, standard_dest_regs, clauses, dest=dest)
-				if dest is None:
-					print('Unprocessed clauses:', real_clauses)
+				# if dest is None:
+				# 	print('Unprocessed clauses:', real_clauses)
 
 
 				if ret_flag is Flag.NEVER:
@@ -3064,9 +3124,11 @@ if __name__ == '__main__':
 						dest_clauses = gen_real_insts(
 							insts, dest_regs, dest_clauses
 						)
+						aux_regs = dest_regs[len(dest_clauses):]
 						output(f'; {rhs_clauses  = }')
 						output(f'; {dest_clauses = }')
-						aux_regs = dest_regs[len(dest_clauses):]
+						output(f'; {dest_regs    = }')
+						output(f'; {aux_regs     = }')
 						move(dest_clauses, rhs_clauses, aux_regs)
 
 					else:
@@ -3133,6 +3195,8 @@ if __name__ == '__main__':
 		output(f'{label}: db `{encoded_string}`, 0')
 
 	Shared.out.close()
+
+	print()
 
 	commands = []
 
