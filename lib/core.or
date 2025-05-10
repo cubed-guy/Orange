@@ -55,7 +55,7 @@ type void
 end
 
 type str
-	const null 0
+	const null ""
 
 	let _ptr &char
 

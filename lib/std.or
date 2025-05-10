@@ -126,20 +126,20 @@ type Dict K V
 	let used int
 
 	// So, this is a constructor? And it works? And it's in my language? Crazy!
-	fn new: int cap -> &Dict K V
-		let out &Dict K V
-		out = alloc(Dict K V)
+	fn new: int cap -> Dict K V
+		let out Dict K V
+
 
 		out.cap = cap
-		out.keys._ptr = alloc(K, cap)
-		out.values._ptr = alloc(V, cap)
+		out.values:type.alloc(&out.values, cap)
+		out.keys:type.alloc(&out.keys, cap)
 		out.used = 0
 
 		let i int
 		i = 0
 		while i < cap
-			out.keys[i] = K::null
-			out.values[i] = V::null
+			out.keys[i] = K::null  // For strings, "" is thus not considered a valid key. TODO: custom strcmp
+			// out.values[i] = V::null
 			i = i + 1
 		end
 
@@ -224,7 +224,7 @@ type Dict K V
 
 		let key_ptr &K
 		key_ptr = &self.keys[index]
-		if *key_ptr == 0
+		if *key_ptr == K::null
 			*key_ptr = key
 			self.used = self.used + 1
 		end
