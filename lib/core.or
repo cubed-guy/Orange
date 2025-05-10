@@ -2,11 +2,6 @@
 
 type _Ptr T
 	// size = 8
-	extern printf: str fmt, &T val
-
-	fn _print: &T self
-		_Ptr T.printf("%p", self)
-	end
 end
 
 type u64

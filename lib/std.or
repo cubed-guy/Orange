@@ -1,6 +1,11 @@
 // contains all builtin functions, helper functions
 // and useful container types
 
+type _ns
+	extern fflush: &any fp
+	extern printf: str fmt, &any p
+end
+
 extern free: &any ptr
 extern puts: str s
 
@@ -11,6 +16,14 @@ end
 fn println T: T arg
 	T._print(arg)
 	puts("")
+end
+
+fn printref: &any p
+	_ns.printf("%p", p)
+end
+
+fn printlnref: &any p
+	_ns.printf("%p\n", p)
 end
 
 enum bool
