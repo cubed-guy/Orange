@@ -50,7 +50,17 @@ type UnboundArr T
 	end
 
 	fn alloc: &UnboundArr T self, int n
+		if n == 0
+			self._ptr = T:null
+			return
+		end
+
 		self._ptr = alloc(T, n)
+
+		if self._ptr == T:null
+			println("Alloc failed without exceptions")
+			return
+		end
 	end
 end
 
@@ -74,8 +84,13 @@ type Arr T
 		*ref = value
 	end
 
+	// TODO: return Arr T
 	fn alloc: &Arr T self, int len
 		UnboundArr T.alloc(&self._arr, len)
+		if self._arr._ptr == T:null
+			self.len = 0
+			return
+		end
 		self.len = len
 	end
 

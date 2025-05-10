@@ -286,7 +286,7 @@ fn linked_lists
 
 	tail = alloc(Int_node)
 	tail.data = 5
-	tail.next = head  // TODO: Figure out NULL, probably Option &Node T
+	tail.next = Int_node:null
 
 	println(tail.data)
 
@@ -295,7 +295,7 @@ fn linked_lists
 	tail.next = alloc(Int_node)
 	tail = tail.next
 	tail.data = 4
-	tail.next = head  // TODO: Figure out NULL, probably Option &Node T
+	tail.next = Int_node:null
 
 	println(head)
 	println(head.next)
@@ -309,7 +309,7 @@ fn linked_lists
 		tail.data = i
 		i = i + 1
 	end
-	// tail.next = head  // TODO: Figure out NULL, probably Option &Node T
+	// tail.next = Int_node:null
 
 	// "Option &" would be good, but it'll need to be specially optimised.
 	tail.next = Int_node:null  // We'll do this for now.
@@ -488,7 +488,7 @@ fn dictionaries
 	let val_ptr &int
 	val_ptr = dict.values._ptr + scaled_index
 
-	puts("getref")
+	println("getref")
 	val_ptr = &dict["new key"]
 	println(*val_ptr)
 
@@ -741,7 +741,7 @@ end
 
 fn big_returner T: T val -> Node T
 	let node Node T
-	node.next = &node  // TODO: Figure out NULL, probably Option &Node T
+	node.next = node:type:null
 	node.data = val
 	return node
 end
@@ -756,7 +756,7 @@ fn big_moves
 	let y Node int
 
 	y.data = 5
-	y.next = &y  // TODO: Figure out NULL, probably Option &Node T
+	y.next = y:type:null
 
 	x = y
 
