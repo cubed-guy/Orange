@@ -1786,12 +1786,16 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 			f'j{(~T).name} _U{ctrl_no}',
 		]
 
+		# clauses will always be empty. We can't use the len as reg_idx
+		# if base_reg is a ptr, then skip the ptr and move using the next reg
+		reg_idx = int(base_reg != 'rsp')
+
 		clause_offset = offset
 		for clause_size, o_clause in zip(split_size(size), o_clauses):
 			insts += [
-				f'mov {{{len(clauses)}:{clause_size}}}, '
+				f'mov {{{reg_idx}:{clause_size}}}, '  # len(clauses will always be 0)
 				f'{size_prefix(clause_size)} [{base_reg} + {clause_offset}]',
-				f'mov {o_clause.asm_str}, {{{len(clauses)}:{clause_size}}}',
+				f'mov {o_clause.asm_str}, {{{reg_idx}:{clause_size}}}',
 			]
 			clause_offset += clause_size
 		insts += [
@@ -1801,19 +1805,27 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 	elif operator is not None:
 		# Type check before codegen
-		if len(o_clauses) != 1:
+		if len(o_clauses) != 1 or len(clauses) != 1:
 			err(f'Operators are not supported for non-standard sizes. '
 				f'({T} uses {T.size} bytes)')
 
+		# lhs_type = T
 		T = operator_result_type(operator, T, o_type)
 		o_clause, = o_clauses
+		clause, = clauses
+
+		# Resize UNSPECIFIED_INT operand
+		if o_type is UNSPECIFIED_INT:
+			o_clause = Clause(o_clause.asm_str, size=clause.size)
+
+			# # TODO: Sign-/Zero-extend if dest is bigger
+			# o_type = lhs_type
+			# T = UNSPECIFIED_INT  # Allows casting between types.
 
 		insts += [
 			# *o_insts,  # too complex if not empty
 
-			*(f'mov {{{i}:{clause.size}}}, {clause.asm_str}'
-				for i, clause in enumerate(clauses)),
-
+			f'mov {{0:{clause.size}}}, {clause.asm_str}',
 			*get_operator_insts(operator, o_clause, o_type)
 		]
 
@@ -1826,11 +1838,11 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 	return insts, clauses, T
 
 def gen_real_insts(insts, regs, clauses=(), *, dest=None) -> list[Clause]:
-	output(f'; Actualising token insts. {regs = }')
-	output(f'; {regs = }')
-	output(f'; {clauses = }')
+	# output(f'; Actualising token insts. {regs = }')
+	# output(f'; {regs = }')
+	# output(f'; {clauses = }')
 	for inst in insts:
-		output(';', repr(inst), '%', regs)
+		# output(';', repr(inst), '%', regs)
 		output(inst.format(*regs))
 
 	# print('Actualising clauses:', clauses)
