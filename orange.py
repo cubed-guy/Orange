@@ -2659,6 +2659,7 @@ standard_dest_regs = (
 	Register.a, Register.b, Register.c, Register.d,
 	Register.r8, Register.r9, Register.r10, Register.r11,
 	Register.r12, Register.r13, Register.r14, Register.r15,
+	Register.si, Register.di,
 )
 dest_reg_fmts = tuple(FmtReplacer(i) for i, dest in enumerate(standard_dest_regs))
 
@@ -3143,10 +3144,10 @@ if __name__ == '__main__':
 							insts, dest_regs, dest_clauses
 						)
 						aux_regs = dest_regs[len(dest_clauses):]
-						output(f'; {rhs_clauses  = }')
-						output(f'; {dest_clauses = }')
-						output(f'; {dest_regs    = }')
-						output(f'; {aux_regs     = }')
+						# output(f'; {rhs_clauses  = }')
+						# output(f'; {dest_clauses = }')
+						# output(f'; {dest_regs    = }')
+						# output(f'; {aux_regs     = }')
 						move(dest_clauses, rhs_clauses, aux_regs)
 
 					else:
