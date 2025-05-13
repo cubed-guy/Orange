@@ -2546,12 +2546,22 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 			err(f'Unsupported operator {operator!r} '
 				f'between {l_type} and {r_type}')
 
-	if operator == '>':  return Flag.g
-	if operator == '<':  return Flag.l
-	if operator == '>=': return Flag.ge
-	if operator == '<=': return Flag.le
+	# they're the same, or they're both ints
 
-	if l_type.is_int() and r_type.is_int():
+	# Use sign if any one is signed.
+	# NOTE: Risks big numbers getting interpreted as negative.
+	if INT_TYPE in (l_type, r_type):
+		if operator == '>':  return Flag.g
+		if operator == '<':  return Flag.l
+		if operator == '>=': return Flag.ge
+		if operator == '<=': return Flag.le
+	elif r_type.is_int():  # Characters
+		if operator == '>':  return Flag.nbe
+		if operator == '<':  return Flag.b
+		if operator == '>=': return Flag.ae
+		if operator == '<=': return Flag.be
+
+	if l_type.is_int():  # Both are ints
 		if r_type is not l_type: return UNSPECIFIED_INT
 		return l_type
 
