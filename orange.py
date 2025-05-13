@@ -1350,15 +1350,19 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 					f'{variant.type}. Got {T} instead.'
 				)
 
-		if expected_split is not None:
-			err(f'Cannot force a clause split for {token!r}')
-
 		discriminator_size = get_discriminator_size(Enum_type.last_field_id)
 		if discriminator_size:
 			clauses = [
 				Clause(f'{variant.field_id}', size=discriminator_size),
 				*clauses,
 			]
+
+		if expected_split is not None:
+			curr_split = [c.size for c in clauses]
+			l = min(len(curr_split), len(expected_split))-1
+			if l > 0 and expected_split[:l] != curr_split[:l]:
+				err(f'For {token!r}, cannot force size redistribution '
+					f'from {curr_split} into {expected_split}')
 
 		output('; Enum clauses:', clauses)
 
@@ -1516,7 +1520,8 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				err(f'{exp!r} does not correspond to a single type')
 			T, = parse_type_result
 
-			if expected_split is not None: err(f'Cannot force a split for {token!r}')
+			if expected_split is not None and expected_split != [8]:
+				err(f'Cannot split {token!r} into {expected_split}')
 			clauses = (Clause('0', 8),)
 			T = T.pointer()
 
@@ -2059,7 +2064,7 @@ def eval_const(exp, types, *, variables) -> Const:
 
 
 # muddles rbx if dest_reg is Flag
-def parse_exp(exp: 'stripped', *, fn_queue, variables) \
+def parse_exp(exp: 'stripped', *, fn_queue, variables, expected_split=None) \
 	-> (list[str], list[Clause], Type):
 	# TODO: return const when regs not required
 
@@ -2081,7 +2086,7 @@ def parse_exp(exp: 'stripped', *, fn_queue, variables) \
 	if exp_type is Exp_type.TOKEN:
 		# [x] T flag, dest_reg flag -> return T
 
-		return parse_token(exp, fn_types, variables=variables)
+		return parse_token(exp, fn_types, variables=variables, expected_split=expected_split)
 		# insts, exp_clauses, T = token.insts, token.clauses, token.type
 		# # print('Token', repr(exp), 'has a type of', T)
 
@@ -2237,7 +2242,16 @@ def parse_exp(exp: 'stripped', *, fn_queue, variables) \
 	# print('Not classified as a flag')
 
 
-	print('Parse exp clauses function call generation using', ret_type)
+	if expected_split is not None:
+		size_split = split_size(ret_type.size)
+		if size_split and (
+			size_split[:-1] != expected_split[:len(size_split)-1]
+			or size_split[-1] > expected_split[len(size_split)-1]
+		):
+			err(f'Clause distribution mismatch for function call. '
+				f'Expecting {expected_split}, but got {size_split}')
+
+	# print('Parse exp clauses function call generation using', ret_type)
 	clauses = tuple(
 		Clause(f'{reg:{size}}', size=size)
 		for reg, size in zip(dest_reg_fmts, split_size(ret_type.size))
@@ -2928,6 +2942,15 @@ if __name__ == '__main__':
 				if fn.name == 'main': dest_regs = arg_regs[0],
 				else: dest_regs = standard_dest_regs
 
+				parse_type_result = parse_type(fn.ret_type, fn_types,
+					variables=variables)
+
+				if isinstance(parse_type_result, ParseTypeError):
+					err(f'[in {fn.ret_type.strip()!r}] {parse_type_result}')
+				if len(parse_type_result) != 1:
+					err('Return type must be exactly one type')
+				expected_ret_type, = parse_type_result
+
 				if not match[2]:
 					ret_type = VOID_TYPE
 				else:
@@ -2935,7 +2958,8 @@ if __name__ == '__main__':
 					# for the case of returning UNSPECIFIED_INT
 					insts, clauses, ret_type = parse_exp(match[2].strip(),
 						fn_queue = fn_queue,
-						variables = variables)
+						variables = variables,
+						expected_split=split_size(expected_ret_type.size))
 					gen_real_insts(
 						insts,
 						standard_dest_regs,
@@ -2945,15 +2969,6 @@ if __name__ == '__main__':
 						in zip(standard_dest_regs, split_size(ret_type.size))
 						],
 					)
-
-				parse_type_result = parse_type(fn.ret_type, fn_types,
-					variables=variables)
-
-				if isinstance(parse_type_result, ParseTypeError):
-					err(f'[in {fn.ret_type.strip()!r}] {parse_type_result}')
-				if len(parse_type_result) != 1:
-					err('Return type must be exactly one type')
-				expected_ret_type, = parse_type_result
 
 				if ret_type is UNSPECIFIED_INT:
 					if not expected_ret_type.is_int():
