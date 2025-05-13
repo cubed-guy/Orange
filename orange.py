@@ -3125,12 +3125,12 @@ if __name__ == '__main__':
 						dest_token = dest
 
 					print('ASSIGNMENT', dest_token, '<-', exp)
-					insts, dest_clauses, dest_type = parse_token(
-						dest_token, fn_types, variables = variables,
-						expected_split = [c.size for c in clauses]
-					)
 
 					if index == -1:
+						insts, dest_clauses, dest_type = parse_token(
+							dest_token, fn_types, variables = variables,
+							expected_split = [c.size for c in rhs_clauses]
+						)
 						if dest_type is UNSPECIFIED_INT or not dest_clauses:
 							err(f'Cannot assign to {dest}')
 
@@ -3153,6 +3153,10 @@ if __name__ == '__main__':
 						move(dest_clauses, rhs_clauses, aux_regs)
 
 					else:
+						insts, dest_clauses, dest_type = parse_token(
+							dest_token, fn_types, variables = variables
+						)
+
 						if len(dest_clauses) != 1:
 							err(f'Item assignment does not support '
 								f'non-standard sizes yet '
