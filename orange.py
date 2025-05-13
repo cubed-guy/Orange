@@ -1400,7 +1400,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 	const_val = None
 	var = None
-	T   = None
+	T   = None  # This only helps to catch errors I make in the parsing logic.
 	insts = []
 
 	colon_idx = Patterns.rfind_through_strings(token, ':')
@@ -1460,9 +1460,8 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				clauses = (Clause(get_string_label(string, strings), 8),)
 			T = STR_TYPE
 		elif field == 'disc':
-			f_insts, clauses, exp_type = parse_token(exp, types,
-				variables=variables)
-			insts += f_insts
+			_, _, exp_type = parse_token(exp, types,
+				variables=variables, virtual=True)
 
 			if addr is Address_modes.DEREF:
 				addr = Address_modes.NONE
@@ -1478,6 +1477,13 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				err(f"Meta field 'disc' expected an enum. {exp_type} is not an enum.")
 
 			size = get_discriminator_size(exp_type.last_field_id)
+			f_insts, clauses, _ = parse_token(
+				exp, types, variables=variables, expected_split=[size]
+			)
+			insts += f_insts
+			if len(clauses) != 1:
+				err(f'[Internal error] Expected split of [{size}], '
+					f'but {clauses = }')
 			clause = clauses[0]
 
 			# TODO: `clause.deref` instead of `clauses`
