@@ -2671,47 +2671,51 @@ if __name__ == '__main__':
 
 	# Builtins
 
-
 	Shared.infile = core_file
 	core_module = Type('_core', module=None, size=None)
 	builtin_types = core_module.children
 
 	PTR_TYPE = Type('_Ptr', module=core_module, size=PTR_SIZE, args=('T',))
-	PTR_TYPE.size = 8
+	PTR_TYPE.size = PTR_SIZE
+
+	STR_TYPE = Type('str', module=core_module, size=PTR_SIZE)
+	STR_TYPE.size = PTR_SIZE
+
+	strings = {}
 
 	core_module.read(sub_module=False)
 
-	CORE_PTR_TYPE = core_module.children['_Ptr']
+	CORE_PTR_TYPE = builtin_types['_Ptr']
+	CORE_STR_TYPE = builtin_types['str']
+
+	# del builtin_types['_Ptr']  # Make _Ptr inaccessible. Use :ref instead.
 
 	# modify the dict so it effects existing instances
 	PTR_TYPE.methods |= CORE_PTR_TYPE.methods
+	builtin_types['_Ptr'] = PTR_TYPE
+	STR_TYPE.methods |= CORE_STR_TYPE.methods
+	STR_TYPE.consts |= CORE_STR_TYPE.consts
+	STR_TYPE.fields |= CORE_STR_TYPE.fields
+	builtin_types['str'] = STR_TYPE
+
+	CHAR_TYPE = builtin_types['char']
+	CHAR_TYPE.size = 1
+	STR_TYPE.deref = CHAR_TYPE
+	print('str null has type:', STR_TYPE.consts['null'].type)
 
 	builtin_types['any'] = Type('any', None)
 	ANY_TYPE = builtin_types['any']
 
 	U64_TYPE = builtin_types['u64']
 	U64_TYPE.size = 8
-	# print('FORCE SET SIZE = 8 [U64]')
 
 	VOID_TYPE = builtin_types['void']
 	VOID_TYPE.size = 0
-	# print('FORCE SET SIZE = 0 [VOID]')
-
-	CHAR_TYPE = builtin_types['char']
-	CHAR_TYPE.size = 1
-	# print('FORCE SET SIZE = 1 [CHAR]')
 
 	INT_TYPE = builtin_types['int']
 	INT_TYPE.size = 4
-	# print('FORCE SET SIZE = 4 [INT]')
 
-	STR_TYPE = builtin_types['str']
-	STR_TYPE.deref = CHAR_TYPE
-	STR_TYPE.consts['null'].type = STR_TYPE
-
-	# print('STR_TYPE size =', STR_TYPE.size)
-
-	builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT}
+	# builtin_type_set = {*builtin_types.values(), UNSPECIFIED_INT}
 
 	Shared.infile = std_file
 	std_module = Type.read_module('_std', sub_module=False)
@@ -2745,8 +2749,6 @@ if __name__ == '__main__':
 
 	if fn_instance.export_name is None:
 		fn_instance.export_name = 'main'
-
-	strings = {}
 
 	while fn_queue:
 		fn, instance_key = fn_queue.pop(0)
