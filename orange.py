@@ -1637,6 +1637,10 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 			offset += var.offset
 			# print(f'  offset: {offset} ({var.offset = })')
 
+		if isinstance(T, str):
+			err('[Internal Error] Found an instance '
+				f'of a base polymorphic type')
+
 		base_addr = f'{base_reg} + {offset}'
 		if addr is Address_modes.ADDRESS:
 			T = T.pointer()
@@ -1653,9 +1657,6 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				sizes = split_size(T.size)
 			else:
 				sizes = expected_split
-				if isinstance(T, str):
-					err('[Internal Error] Found an instance '
-						f'of a base polymorphic type')
 				if sum(expected_split) > T.size:
 					sizes[-1] -= sum(expected_split)-T.size
 					if sizes[-1] not in (1, 2, 4, 8):
@@ -1843,11 +1844,11 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 	return insts, clauses, T
 
 def gen_real_insts(insts, regs, clauses=(), *, dest=None) -> list[Clause]:
-	# output(f'; Actualising token insts. {regs = }')
+	# output(f'; Actualising token insts.')
 	# output(f'; {regs = }')
 	# output(f'; {clauses = }')
 	for inst in insts:
-		# output(';', repr(inst), '%', regs)
+		# output(';', repr(inst))
 		output(inst.format(*regs))
 
 	# print('Actualising clauses:', clauses)
@@ -1857,6 +1858,7 @@ def gen_real_insts(insts, regs, clauses=(), *, dest=None) -> list[Clause]:
 	]
 
 	if dest is None: return clauses
+	output(f'; Move to {dest}')
 	move(dest, clauses, regs[len(clauses):])
 
 def eval_const(exp, types, *, variables) -> Const:
@@ -2254,7 +2256,7 @@ def parse_exp(exp: 'stripped', *, fn_queue, variables, expected_split=None) \
 	# print('Parse exp clauses function call generation using', ret_type)
 	clauses = tuple(
 		Clause(f'{reg:{size}}', size=size)
-		for reg, size in zip(dest_reg_fmts, split_size(ret_type.size))
+		for reg, size in zip(standard_dest_regs, split_size(ret_type.size))
 	)
 
 	return [], clauses, ret_type
@@ -2960,13 +2962,14 @@ if __name__ == '__main__':
 						fn_queue = fn_queue,
 						variables = variables,
 						expected_split=split_size(expected_ret_type.size))
+
 					gen_real_insts(
 						insts,
-						standard_dest_regs,
+						standard_dest_regs[len(clauses):],
 						clauses,
 						dest = [
 						Clause(reg.encode(size=size), size=size) for reg, size
-						in zip(standard_dest_regs, split_size(ret_type.size))
+						in zip(standard_dest_regs, split_size(expected_ret_type.size))
 						],
 					)
 
