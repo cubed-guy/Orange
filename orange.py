@@ -22,20 +22,27 @@
 # DONE: exposed renaming support
 # DONE: explicit enum field ids
 # DONE: Big enum variant checks
-# TODO: correct operator types with UNSPECIFIED_INT
-# TODO: SDL bindings
+# DONE: correct operator types with UNSPECIFIED_INT
+# TODO: namespace aliasing
 # TODO: enum consts
-# TODO: const operations
+# TODO: defer while
+# TODO: polymorphic enums
+# TODO: stack arguments
 # TODO: check non-void return
+# TODO: find through chars
 # TODO: hex and bin literals
 # TODO: more unaries
-# TODO: namespace aliasing
+# TODO: const operations
+# TODO: enum:variant_name
 # TODO: big args
-# TODO: stack arguments
+# TODO: double deref types
+# TODO: case statement
+# TODO: SDL bindings
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
 # TODO: inline (and other?) optimisations
 # TODO: SoA support
 # TODO: conditional compilation
+# TODO: compile-time interfaces?
 
 from sys import argv
 from enum import Enum, auto
@@ -1589,6 +1596,10 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 		# print(f'Getting a field of {root!r}')
 		var = variables[root]
+
+		if isinstance(var, Const):
+			err(f'Fields of constants are not yet supported ({var.name} is a constant)')
+
 		offset = var.offset
 		base_reg = 'rsp'
 
