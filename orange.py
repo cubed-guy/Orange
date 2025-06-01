@@ -62,6 +62,7 @@ class Shared:
 	libraries = []
 	library_paths = set()
 	imports = {}
+	fn_instance = None
 
 class Subscriptable:
 	def __getitem__(self, key):
@@ -109,6 +110,8 @@ def output(*args, file = Shared.out, **kwargs):
 	print(*args, **kwargs, file = file)
 
 def err(msg):
+	if Shared.fn_instance and Shared.fn_instance.type_mappings:
+		print('Type Mappings:', Shared.fn_instance.type_mappings)
 	print(f'File "{Shared.infile.name}", line {Shared.line_no}')
 	print('   ', Shared.line.strip())
 	if Shared.debug: raise RuntimeError(msg)
@@ -1571,13 +1574,13 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				if expected_split is None or addr is Address_modes.DEREF:
 					sizes = split_size(T.size)
 				else:
-					sizes = expected_split
+					sizes = expected_split.copy()
 					if sum(expected_split) > T.size:
 						sizes[-1] -= sum(expected_split)-T.size
 						if sizes[-1] not in (1, 2, 4, 8):
 							err(
 								f'Cannot expect {expected_split} '
-								f'for {T} of size {T.size}'
+								f'for {token!r} of type {T} and size {T.size}'
 							)
 				clauses = []
 				# print('CREATING CLAUSES FOR', sizes)
@@ -1858,9 +1861,12 @@ def gen_real_insts(insts, regs, clauses=(), *, dest=None) -> list[Clause]:
 	# output(f'; Actualising token insts.')
 	# output(f'; {regs = }')
 	# output(f'; {clauses = }')
-	for inst in insts:
-		# output(';', repr(inst))
-		output(inst.format(*regs))
+	try:
+		for inst in insts:
+			# output(';', repr(inst))
+			output(inst.format(*regs))
+	except IndexError:
+		err('Expression too big')
 
 	# print('Actualising clauses:', clauses)
 	clauses = [
@@ -2665,6 +2671,8 @@ def move(dst_clauses, src_clauses, aux_regs: tuple[Register, ...]):
 		output(f'mov {dst.asm_str}, {src.asm_str}')
 
 def get_string_label(string, strings):
+	output(f"; evaluated string: {string!r}")
+
 	if string in strings: return strings[string]
 	label = f'_s{len(strings)}'
 	strings[string] = label
@@ -2789,42 +2797,42 @@ if __name__ == '__main__':
 
 	while fn_queue:
 		fn, instance_key = fn_queue.pop(0)
-		fn_instance = fn.instances[instance_key]
+		Shared.fn_instance = fn.instances[instance_key]
 
 		# print('\n', fn.name, instance_key, sep = '')
 
-		if fn_instance.template.isextern:
+		if Shared.fn_instance.template.isextern:
 			# print(f'DEQUEUED EXTERN {fn}, {instance_key}')
 			continue
 		# else:
 			# print('DEQUEUED Function', fn)
 
-		# fn_instance = fn.add_sub(instance_key)
-		# if fn_instance is None: continue
+		# Shared.fn_instance = fn.add_sub(instance_key)
+		# if Shared.fn_instance is None: continue
 
 		# 2 passes. allocate variable space first
 
-		output(f'\n; {fn_instance.type_mappings}')
+		output(f'\n; {Shared.fn_instance.type_mappings}')
 
-		# print('INSTANTIATE INSTANCE', fn.name, instance_key, fn_instance.mangle())
+		# print('INSTANTIATE INSTANCE', fn.name, instance_key, Shared.fn_instance.mangle())
 
 		curr_mod = fn.module
 
-		fn_types = curr_mod.children | fn_instance.type_mappings
+		fn_types = curr_mod.children | Shared.fn_instance.type_mappings
 
 		Shared.infile = fn.infile
 		Shared.line_no = fn.line_no
 		Shared.line = f'fn {fn}'  # For errors
 		Shared.infile.seek(fn.tell)
 
-		fn_instance.init_args_vars(curr_mod.children)
-		offset = fn_instance.offset
+		Shared.fn_instance.init_args_vars(curr_mod.children)
+		offset = Shared.fn_instance.offset
 
-		variables = curr_mod.consts | fn_instance.arg_vars
-		local_variables = {*fn_instance.arg_vars}
+		variables = curr_mod.consts | Shared.fn_instance.arg_vars
+		local_variables = {*Shared.fn_instance.arg_vars}
 
 		# print('Instantiating new concrete function:')
-		# print('Instantiating', fn.name, 'with', fn_instance.type_mappings, 'as', fn_instance.mangle())
+		# print('Instantiating', fn.name, 'with', Shared.fn_instance.type_mappings, 'as', Shared.fn_instance.mangle())
 		# print('Module:', curr_mod)
 		# print('Variables:', variables)
 		# print('Constants:', curr_mod.consts)
@@ -2910,7 +2918,7 @@ if __name__ == '__main__':
 		# We already have the line number in the struct, so we can error nicely
 
 		# Code gen
-		output(f'{fn_instance.mangle()}:')
+		output(f'{Shared.fn_instance.mangle()}:')
 
 		output('push rbp')
 		output(f'mov rbp, rsp')  # 32 extra bytes are always required
