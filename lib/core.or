@@ -2,6 +2,12 @@
 
 type _Ptr T
 	// size = 8
+	fn _print: &T self
+		printref(self)
+		print('[')
+		print(T:name)
+		print(']')
+	end
 end
 
 type u64
@@ -62,6 +68,22 @@ type str
 
 	extern strlen: str s -> u64
 
+	fn _getref: str self, int idx -> &char
+		return self._ptr + idx
+	end
+
+	fn _getitem: str self, int idx -> char
+		let out_ref &char
+		out_ref = &self[idx]
+		return *out_ref
+	end
+
+	fn _setitem: str self, int idx, char value
+		let out_ref &char
+		out_ref = &self[idx]
+		*out_ref = value
+	end
+
 	fn _hash: str self -> u64
 		// hashes by xor each new character at pseudorandom positions
 		// within the 64 bits of the accumulator
@@ -78,7 +100,7 @@ type str
 		shift = str._hash_shuffle(acc, 0)
 
 		let c char
-		c = *self
+		c = self[0]
 
 		let lim int
 		lim = 1000

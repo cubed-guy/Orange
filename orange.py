@@ -243,22 +243,24 @@ class Function_header:
 			# print('PARSED TYPE FOR METHOD:', caller_type)
 
 			# NOTE: Temp
-			if fn_name not in caller_type.methods:
-				# print(f'TYPE {caller_type} HAS NO SUCH METHOD {fn_name!r}')
-				# check for deref only if method doesn't exist
+
+			if caller_type.deref is not None and fn_name in caller_type.deref.methods:  # Check method in deref first.
+				output(f'; Using deref method {caller_type.deref.methods[fn_name]}')
+				caller_type = caller_type.deref
+			elif fn_name not in caller_type.methods:
 				if caller_type.deref is not None:
-					caller_type = caller_type.deref
-					if fn_name not in caller_type.methods:
-						if caller_type.deref is not None:
-							err(
-								f'{caller_type} has no method named {fn_name!r}. '
-								f'(Classmethod are limited to '
-								f'one level of implicit dereference. '
-								f'Use :deref for more levels)'
-							)
-						err(f'{caller_type} has no method named {fn_name!r}')
-				else:
-					err(f'{caller_type} has no method named {fn_name!r}')
+					err(
+						f'{caller_type} has no method named {fn_name!r}. '
+						f'(Classmethod are limited to '
+						f'one level of implicit dereference. '
+						f'Use :deref for more levels)'
+					)
+				err(f'{caller_type} has no method {fn_name!r}')
+			# elif caller_type.deref is not None:
+			# 	output(f'; *{caller_type} == {caller_type.deref} has no method {fn_name!r}')
+			# else:
+			# 	output(f'; {caller_type} is not a pointer')
+
 			fn_header = caller_type.methods[fn_name]
 			# print('METHOD  ', fn_name, fn_header)
 		elif fn_name not in curr_mod.methods:
@@ -2218,10 +2220,16 @@ def parse_exp(exp: 'stripped', *, fn_queue, variables, expected_split=None) \
 			)
 
 		arg_types = [T]
-		if fn_name not in T.methods:
-			if T.deref is None or fn_name not in T.deref.methods:
-				err(f'{T} has no method {fn_name!r}')
+		if T.deref is not None and fn_name in T.deref.methods:  # Check method in deref first.
+			output(f'; Using deref method {T.deref.methods[fn_name]}')
 			T = T.deref
+		elif fn_name not in T.methods:
+			err(f'{T} has no method {fn_name!r}')
+		elif T.deref is not None:
+			output(f'; *{T} == {T.deref} has no method {fn_name!r}')
+		else:
+			output(f'; {T} is not a pointer')
+
 
 		fn_header = T.methods[fn_name]
 		ret_type = call_function(
@@ -2745,8 +2753,6 @@ if __name__ == '__main__':
 
 	CHAR_TYPE = builtin_types['char']
 	CHAR_TYPE.size = 1
-	STR_TYPE.deref = CHAR_TYPE
-	print('str null has type:', STR_TYPE.consts['null'].type)
 
 	builtin_types['any'] = Type('any', None)
 	ANY_TYPE = builtin_types['any']

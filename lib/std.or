@@ -71,7 +71,6 @@ type UnboundArr T
 		self._ptr = alloc(T, n)
 
 		if self._ptr == T:null
-			println("Alloc failed without exceptions")
 			return
 		end
 	end
@@ -141,7 +140,6 @@ type Dict K V
 	// So, this is a constructor? And it works? And it's in my language? Crazy!
 	fn new: int cap -> Dict K V
 		let out Dict K V
-
 
 		out.cap = cap
 		out.values:type.alloc(&out.values, cap)
