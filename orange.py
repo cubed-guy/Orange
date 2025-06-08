@@ -27,6 +27,7 @@
 # TODO: enum consts
 # TODO: defer while
 # TODO: polymorphic enums
+# TODO: implicit arg refs
 # TODO: stack arguments
 # TODO: check non-void return
 # TODO: find through chars
@@ -438,6 +439,7 @@ class Type:
 
 		in_function = False
 		scope_level = 0
+		scope_stack = []
 
 		tell = 0
 		for Shared.line_no, Shared.line in enumerate(Shared.infile, 1):
@@ -656,6 +658,7 @@ class Type:
 
 				in_function = True
 				scope_level += 1
+				scope_stack.append(fn)
 
 			elif match[1] == 'extern':  # gets added to be linked
 				# syntax extern name: type arg -> ret
@@ -830,20 +833,22 @@ class Type:
 			# else: not (type_stack and not in_function) == not type_stack or in_function
 
 			elif match[1] in ('if', 'while'):
-				# print(f'[P1] Enter construct')
+				print(f'[P1] Enter construct', match[1])
 
 				scope_level += 1
+				scope_stack.append(match[1])
 
 			elif match[1] == 'end':
 				# first part handled by match[1] == 'type'
 				# (type > ... > type) > fn > cond > cond > ...
+				ctrl_scope = scope_stack.pop()
 				scope_level -= 1
 				if scope_level < 0:
 					err('end statement does not match any block')
 				elif scope_level == 0:
 					in_function = False
-				# else:
-				# 	print(f'[P1] Exit construct')
+				else:
+					print(f'[P1] Exit construct', ctrl_scope)
 
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		# if self is PTR_TYPE:
@@ -2548,9 +2553,9 @@ def get_operator_insts(operator, operand_clause, operand_type):
 def operator_result_type(operator, l_type, r_type) -> Type:
 	if operator == '-':
 		# ptr - ptr, ptr - int, int - int
-		if l_type.deref is not None:
+		if l_type.deref is not None or l_type is STR_TYPE:
 			if r_type.is_int(): return l_type
-			if r_type.deref is not None: return UNSPECIFIED_INT
+			if r_type.deref is not None or r_type is STR_TYPE: return UNSPECIFIED_INT
 			err(f'Cannot subtract {r_type} from a pointer')
 
 		if l_type.is_int() and r_type.is_int():
@@ -2570,7 +2575,7 @@ def operator_result_type(operator, l_type, r_type) -> Type:
 		else:
 			err(f'Cannot add {l_type} and {r_type}')
 
-		if o_type.deref is not None:
+		if o_type.deref is not None or o_type is STR_TYPE:
 			return o_type
 
 		if not o_type.is_int():
@@ -3110,6 +3115,8 @@ if __name__ == '__main__':
 				if not ctrl_stack: err("'end' outside any control block.")
 
 				ctrl = ctrl_stack.pop()
+				print('END of', ctrl)
+
 				if ctrl.branch is Branch.WHILE:
 					output(f'jmp {ctrl.label}')
 					output(f'_E{ctrl.ctrl_no}:')
