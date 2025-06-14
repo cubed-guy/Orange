@@ -137,9 +137,16 @@ type Dict K V
 	let values UnboundArr V
 	let used int
 
+	const PROBE_STEP 7
+
 	// So, this is a constructor? And it works? And it's in my language? Crazy!
 	fn new: int cap -> Dict K V
 		let out Dict K V
+
+		if cap%out:type::PROBE_STEP
+		else
+			cap = cap + 1  // cap must not be a multiple of the probe step
+		end
 
 		out.cap = cap
 		out.values:type.alloc(&out.values, cap)
@@ -188,7 +195,7 @@ type Dict K V
 				return index
 			end
 
-			index = index + 7
+			index = index + dict:type:deref::PROBE_STEP
 			if index >= cap
 				index = index % cap
 			end
@@ -230,7 +237,7 @@ type Dict K V
 		let index int
 		index = Dict K V.index(self, key)
 		if index < 0
-			return
+			return  // There's no way to tell that setitem failed?
 		end
 
 		let key_ptr &K
