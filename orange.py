@@ -1642,13 +1642,16 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 			if T.is_enum:
 				discriminator_size = get_discriminator_size(T.last_field_id)
 
-				insts.append(
-					# crashes on non-standard field_sizes
-					f'cmp {size_prefix(discriminator_size)} '
-					f'[{base_reg} + {offset}], {var.field_id}'
-				)
+				if not discriminator_size:
+					T = Flag.ALWAYS
+				else:
+					insts.append(
+						# crashes on non-standard field_sizes
+						f'cmp {size_prefix(discriminator_size)} '
+						f'[{base_reg} + {offset}], {var.field_id}'
+					)
 
-				T = Flag.e
+					T = Flag.e
 			else:
 				# for _name, _field in T.fields.items():
 					# print(' ', _name, _field.type)
