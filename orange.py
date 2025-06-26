@@ -952,7 +952,8 @@ class Type:
 			expected_type = type_queue.pop(0)
 			if token.startswith('&'):
 				if expected_type.deref is None:
-					err(f'{expected_type!r} does not have deref for {token!r}')
+					err(f'Expecting a pointer ({token!r} in {type_str!r}). '
+						f'Found argument of {expected_type!r}.')
 				# print(f'deref: {token!r} -> {token[1:]!r}; {expected_type} -> {expected_type.deref}')
 				expected_type = expected_type.deref
 				token = token[1:]
@@ -1810,11 +1811,19 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 		output(f'; {Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
 
-		insts += [
-			# preserves flag state
+		if T is Flag.NEVER:
+			insts += [
+				# preserves flag state
 
-			f'j{(~T).name} _U{ctrl_no}',
-		]
+				f'jmp _U{ctrl_no}',
+			]
+		elif T is not Flag.ALWAYS:
+			insts += [
+				# preserves flag state
+
+				f'j{(~T).name} _U{ctrl_no}',
+			]
+
 
 		# clauses will always be empty. We can't use the len as reg_idx
 		# if base_reg is a ptr, then skip the ptr and move using the next reg
