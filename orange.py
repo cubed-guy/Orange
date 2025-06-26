@@ -23,16 +23,18 @@
 # DONE: explicit enum field ids
 # DONE: Big enum variant checks
 # DONE: correct operator types with UNSPECIFIED_INT
+# DONE: hex and bin literals
+# TODO: implicit arg ref for getitem / setitem
 # TODO: namespace aliasing
-# TODO: enum consts
+# TODO: Struct literals
 # TODO: defer while
 # TODO: polymorphic enums
-# TODO: implicit arg refs
+# TODO: enum consts
+# TODO: Allow 64-bit literals in operators
 # TODO: stack arguments
 # TODO: check non-void return
-# TODO: find through chars
-# TODO: hex and bin literals
 # TODO: more unaries
+# TODO: find through chars
 # TODO: const operations
 # TODO: enum:variant_name
 # TODO: big args
@@ -51,6 +53,7 @@ from enum import Flag as Enum_flag
 from typing import Union, Optional
 from os import system, getcwd
 import os.path
+import string
 
 class Shared:
 	debug = True
@@ -180,6 +183,17 @@ class Patterns:
 				slashes = j - l
 				if not slashes&1: start = l; break
 				j -= 1
+
+	@staticmethod
+	def numeric(s):
+		if s.startswith('0x'):
+			return not s[2:].strip(string.hexdigits)
+		if s.startswith('0b'):
+			return not s[2:].strip('01')
+		if s.startswith('0o'):
+			return not s[2:].strip(string.octdigits)
+
+		return s.isdigit()
 
 class ParseTypeError(ValueError):
 	pass
@@ -1261,6 +1275,22 @@ def parse_type(type_str, types, *, variables) -> Union[list[Type], ParseTypeErro
 	args[:args_len] = instance,
 	return args
 
+def parse_num(token) -> int:
+	if token.startswith('0x'):
+		val = int(token, 16)
+	elif token.startswith('0b'):
+		val = int(token, 2)
+	elif token.startswith('0o'):
+		val = int(token, 7)
+	else:
+		val = int(token)
+
+	if val >> 32:
+		err(f'Only 32-bit literals are supported. {token!r} uses {val.bit_length()} bits.')
+
+	return val
+
+
 def parse_string(token) -> bytes:
 	if token[0] != '"': err('Strings can only start with \'"\'')
 
@@ -1697,12 +1727,12 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 				))
 				offset += size
 
-	elif token.isdigit():
+	elif Patterns.numeric(token):
 		if addr is Address_modes.ADDRESS:
 			err("Can't take address of an integer literal")
 		if addr is Address_modes.DEREF:
 			err("Can't dereference an integer literal")
-		const_val = int(token)
+		const_val = parse_num(token)
 		T = UNSPECIFIED_INT
 
 	elif token.startswith("'"):
@@ -2032,12 +2062,12 @@ def eval_const(exp, types, *, variables) -> Const:
 	elif dot_idx != -1:
 		err('Constant fields are not yet supported')
 
-	elif exp.isdigit():
+	elif Patterns.numeric(exp):
 		if addr is Address_modes.ADDRESS:
 			err("Can't take address of an integer literal")
 		if addr is Address_modes.DEREF:
 			err("Can't dereference an integer literal")
-		val = int(exp)
+		val = parse_num(exp)
 		T = UNSPECIFIED_INT
 
 	elif exp.startswith("'"):
