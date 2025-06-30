@@ -78,7 +78,7 @@ type str
 		return *out_ref
 	end
 
-	fn _setitem: str self, int idx, char value
+	fn _setitem: str self, char value, int idx
 		let out_ref &char
 		out_ref = &self[idx]
 		*out_ref = value
@@ -113,7 +113,7 @@ type str
 
 			shift = str._hash_shuffle(acc, shift)
 			self = self + 1
-			c = *self
+			c = *self._ptr
 			print("Getting hash using ")
 			println(c)
 
