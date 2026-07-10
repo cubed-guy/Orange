@@ -137,7 +137,7 @@ type Dict K V
 	let values UnboundArr V
 	let used int
 
-	const PROBE_STEP 7
+	const PROBE_STEP 31
 
 	// So, this is a constructor? And it works? And it's in my language? Crazy!
 	fn new: int cap -> Dict K V

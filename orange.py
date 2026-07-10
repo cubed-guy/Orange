@@ -25,21 +25,23 @@
 # DONE: correct operator types with UNSPECIFIED_INT
 # DONE: hex and bin literals
 # TODO: implicit arg ref for getitem / setitem
-# TODO: namespace aliasing
-# TODO: Struct literals
-# TODO: defer while
+# TODO: Single-field struct literals
+# TODO: better recursive type support
 # TODO: polymorphic enums
+# TODO: namespace aliasing
+# TODO: defer while
+# TODO: case statement
+# TODO: Multifield literals
 # TODO: enum consts
 # TODO: Allow 64-bit literals in operators
 # TODO: stack arguments
+# TODO: big args
 # TODO: check non-void return
 # TODO: more unaries
 # TODO: find through chars
 # TODO: const operations
 # TODO: enum:variant_name
-# TODO: big args
 # TODO: double deref types
-# TODO: case statement
 # TODO: SDL bindings
 # TODO: a (better) way to cast variables, Exposed T, Self, :exposed
 # TODO: inline (and other?) optimisations
@@ -162,11 +164,14 @@ class Patterns:
 		while 1:
 			i = s.find(c, start)
 			j = s.find('"', start, i)
+			# print(f'INIT: {c = !r} {i = }, {j = }, {s[start:] = }')
 			if j == -1: return i
 			j += 1
 			while 1:
 				j = s.find('"', j)
+				if j == -1: err('EOL while parsing string')
 				k = j - len(s[:j].rstrip('\\'))
+				# print(f'{i = }, {j = }, {k = }, {start = }, {s[start:] = }')
 				if not k&1: start = j+1; break
 				j += 1
 
@@ -847,7 +852,7 @@ class Type:
 			# else: not (type_stack and not in_function) == not type_stack or in_function
 
 			elif match[1] in ('if', 'while'):
-				print(f'[P1] Enter construct', match[1])
+				# print(f'[P1] Enter construct', match[1])
 
 				scope_level += 1
 				scope_stack.append(match[1])
@@ -861,8 +866,8 @@ class Type:
 					err('end statement does not match any block')
 				elif scope_level == 0:
 					in_function = False
-				else:
-					print(f'[P1] Exit construct', ctrl_scope)
+				# else:
+				# 	print(f'[P1] Exit construct', ctrl_scope)
 
 	def get_instance(self, args: tuple['Type']) -> 'Type':
 		# if self is PTR_TYPE:
@@ -954,7 +959,8 @@ class Type:
 		type_queue = [self]
 		out_mappings = {}
 		types = module.children
-		print('Matching Pattern', self, type_str)
+		print('Type str is of len:', len(type_str))
+		print('Matching Pattern', self, repr(type_str))
 
 		for token in type_str.split():
 			if not type_queue:
