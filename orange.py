@@ -1689,6 +1689,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 					)
 
 					T = Flag.e
+
 			else:
 				# for _name, _field in T.fields.items():
 					# print(' ', _name, _field.type)
@@ -1847,35 +1848,30 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 		output(f'; {Shared.line_no}: ARROW FROM {clauses} TO {o_clauses} ({size = })')
 
-		if T is Flag.NEVER:
+		if T is Flag.NEVER: output(f'; enum will never resolve')
+		else:
+			if T is not Flag.ALWAYS:
+				insts += [
+					# preserves flag state
+
+					f'j{(~T).name} _U{ctrl_no}',
+				]
+
+			# clauses will always be empty. We can't use the len as reg_idx
+			# if base_reg is a ptr, then skip the ptr and move using the next reg
+			reg_idx = int(base_reg != 'rsp')
+
+			clause_offset = offset
+			for clause_size, o_clause in zip(split_size(size), o_clauses):
+				insts += [
+					f'mov {{{reg_idx}:{clause_size}}}, '  # len(clauses) will always be 0
+					f'{size_prefix(clause_size)} [{base_reg} + {clause_offset}]',
+					f'mov {o_clause.asm_str}, {{{reg_idx}:{clause_size}}}',
+				]
+				clause_offset += clause_size
 			insts += [
-				# preserves flag state
-
-				f'jmp _U{ctrl_no}',
+				f'_U{ctrl_no}:',
 			]
-		elif T is not Flag.ALWAYS:
-			insts += [
-				# preserves flag state
-
-				f'j{(~T).name} _U{ctrl_no}',
-			]
-
-
-		# clauses will always be empty. We can't use the len as reg_idx
-		# if base_reg is a ptr, then skip the ptr and move using the next reg
-		reg_idx = int(base_reg != 'rsp')
-
-		clause_offset = offset
-		for clause_size, o_clause in zip(split_size(size), o_clauses):
-			insts += [
-				f'mov {{{reg_idx}:{clause_size}}}, '  # len(clauses will always be 0)
-				f'{size_prefix(clause_size)} [{base_reg} + {clause_offset}]',
-				f'mov {o_clause.asm_str}, {{{reg_idx}:{clause_size}}}',
-			]
-			clause_offset += clause_size
-		insts += [
-			f'_U{ctrl_no}:',
-		]
 		clauses = ()
 
 	elif operator is not None:
@@ -3359,5 +3355,5 @@ if __name__ == '__main__':
 
 	if commands:
 		cmd = ' && '.join(commands)
-		# print('running:\n', cmd)
+		print('running:\n', cmd)
 		result = system(cmd)

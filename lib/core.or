@@ -95,7 +95,7 @@ type str
 		acc = str.strlen(self)
 
 		return acc
-		
+
 		let shift char
 		shift = str._hash_shuffle(acc, 0)
 
@@ -113,7 +113,7 @@ type str
 
 			shift = str._hash_shuffle(acc, shift)
 			self = self + 1
-			c = *self._ptr
+			c = self[0]
 			print("Getting hash using ")
 			println(c)
 
