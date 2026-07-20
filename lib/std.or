@@ -234,10 +234,20 @@ type Dict K V
 	end
 
 	fn _setitem: &Dict K V self, V value, K key
+		let ref &V
+		ref = self:type.reserve(self, key)
+		if ref != V:null
+			*ref = value
+		end
+		// There's no way to tell that setitem failed.
+	end
+
+	// Extracted away to allow non-reg-size types for V
+	fn reserve: &Dict K V self, K key -> &V
 		let index int
 		index = Dict K V.index(self, key)
 		if index < 0
-			return  // There's no way to tell that setitem failed?
+			return V:null
 		end
 
 		let key_ptr &K
@@ -247,6 +257,6 @@ type Dict K V
 			self.used = self.used + 1
 		end
 
-		self.values[index] = value
+		return &self.values[index]
 	end
 end
