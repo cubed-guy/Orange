@@ -672,7 +672,7 @@ class Type:
 					tuple(arg.lstrip().rsplit(maxsplit=1) for arg in args),
 					ret_type, self, tell, Shared.line_no, Shared.infile
 				)
-				print(f'FUNCTION {qual_name}')
+				# print(f'FUNCTION {qual_name}')
 				curr_type.methods[name] = fn
 
 				in_function = True
@@ -740,14 +740,15 @@ class Type:
 					)
 
 					if isinstance(parse_type_result, ParseTypeError):
-						print(f'In {T.strip()!r}, {parse_type_result}')
+						# print(f'In {T.strip()!r}, {parse_type_result}')
+						...
 					else:
 						if len(parse_type_result) != 1:
 							err('Field declaration expects exactly 1 type. '
 								f'{T!r} resolves to '
 								f'{len(parse_type_result)} types.')
 						T, = parse_type_result
-						print('GOT REAL TYPE', T)
+						# print('GOT REAL TYPE', T)
 
 					if curr_type.is_enum:
 						offset = 0
@@ -778,16 +779,16 @@ class Type:
 					if curr_type.size is not None:
 						if not isinstance(T, Type):
 							curr_type.size = None
-							print(f'{T} is undefined. Setting size of {curr_type} to None')
+							# print(f'{T} is undefined. Setting size of {curr_type} to None')
 						elif curr_type.is_enum:
 							curr_type.size = max(curr_type.size, T.size)
 						elif T.size is None:
 							err(f'{T} is polymorphic. Cannot instantiate it without type arguments.')
 						else:
-							print(f'{curr_type}: adding field {name} ({T}) (size = {T.size})')
+							# print(f'{curr_type}: adding field {name} ({T}) (size = {T.size})')
 							curr_type.size += T.size
-					else:
-						print('curr_type.size:', 'Size is already None')
+					# else:
+					# 	print('curr_type.size:', 'Size is already None')
 
 				elif match[1] == 'const':
 					# print(f'[{Shared.line_no:3}] Detected statement type using', match and match[1])
@@ -800,7 +801,7 @@ class Type:
 					if name in curr_type.consts:
 						err(f'{name!r} is already a declared constant')
 
-					print(f'CONSTANT {curr_type.name}.{name}')
+					# print(f'CONSTANT {curr_type.name}.{name}')
 					const_var = eval_const(exp, curr_type_dict,
 						variables=curr_type.consts)
 					const_var.name = name
@@ -842,7 +843,7 @@ class Type:
 					# else:
 					# 	print('END TYPE', curr_type)
 
-					print(f'{curr_type} created with size of {curr_type.size}')
+					# print(f'{curr_type} created with size of {curr_type.size}')
 
 					if type_stack: curr_type = type_stack[-1]
 					else: curr_type = self
@@ -959,8 +960,8 @@ class Type:
 		type_queue = [self]
 		out_mappings = {}
 		types = module.children
-		print('Type str is of len:', len(type_str))
-		print('Matching Pattern', self, repr(type_str))
+		# print('Type str is of len:', len(type_str))
+		# print('Matching Pattern', self, repr(type_str))
 
 		for token in type_str.split():
 			if not type_queue:
@@ -1353,7 +1354,7 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 
 	# (instructions to get the value of token, expression, type)
 
-	print(f'Parse token {token!r}. {expected_split = }')
+	# print(f'Parse token {token!r}. {expected_split = }')
 
 	idx = Patterns.find_through_strings(token, '{')
 	if idx != -1:
@@ -1972,7 +1973,7 @@ def eval_const(exp, types, *, variables) -> Const:
 		exp = exp[:colon_idx].rstrip()
 		field = exp[colon_idx+1:].lstrip()
 
-		print(f'Token meta: {exp = }, {field = }')
+		# print(f'Token meta: {exp = }, {field = }')
 
 		if exp.endswith(':'):  # const defined in terms of a const
 			parse_type_result = parse_type(exp[:-1], types, variables=variables)
@@ -2483,6 +2484,9 @@ def call_function(fn_header, arg_types, args_str, *, variables, caller_type = No
 	for typename, subbed_type in type_mappings.items():
 		if subbed_type is UNSPECIFIED_INT:
 			type_mappings[typename] = INT_TYPE
+
+	if type_mappings:
+		print(f'{Shared.infile.name}:{Shared.line_no}: TYPE MAP {fn_header}{fn_header.args} AGAINST {arg_types} -> {type_mappings}')
 
 	try:
 		instance_key = tuple(type_mappings[typearg_name].name for typearg_name in fn_header.typeargs)
@@ -3159,7 +3163,7 @@ if __name__ == '__main__':
 				if not ctrl_stack: err("'end' outside any control block.")
 
 				ctrl = ctrl_stack.pop()
-				print('END of', ctrl)
+				# print('END of', ctrl)
 
 				if ctrl.branch is Branch.WHILE:
 					output(f'jmp {ctrl.label}')
@@ -3228,7 +3232,7 @@ if __name__ == '__main__':
 					else:
 						dest_token = dest
 
-					print('ASSIGNMENT', dest_token, '<-', exp)
+					# print('ASSIGNMENT', dest_token, '<-', exp)
 
 					if index == -1:
 						insts, dest_clauses, dest_type = parse_token(
