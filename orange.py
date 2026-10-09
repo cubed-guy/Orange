@@ -24,6 +24,7 @@
 # DONE: Big enum variant checks
 # DONE: correct operator types with UNSPECIFIED_INT
 # DONE: hex and bin literals
+# TODO: skip char literals in find_through_strings
 # TODO: implicit arg ref for getitem / setitem
 # TODO: Single-field struct literals
 # TODO: better recursive type support
@@ -111,8 +112,8 @@ print('Output asm file:', argv[2])
 arg_infile = open(argv[1])
 Shared.out = open(argv[2], 'w')
 def output(*args, file = Shared.out, **kwargs):
-	if None in args:
-		err('[Internal Error] None passed into output()')
+	# if None in args:
+	# 	err('[Internal Error] None passed into output()')
 	print(*args, **kwargs, file = file)
 
 def err(msg):
@@ -162,32 +163,50 @@ class Patterns:
 	@staticmethod
 	def find_through_strings(s, c, *, start=0):
 		while 1:
-			i = s.find(c, start)
-			j = s.find('"', start, i)
-			# print(f'INIT: {c = !r} {i = }, {j = }, {s[start:] = }')
-			if j == -1: return i
-			j += 1
+			char_idx = s.find(c, start)
+			qidx_1 = s.find("'", start, char_idx)
+			qidx_2 = s.find('"', start, char_idx)
+			# print(f'INIT: {c = !r} {char_idx = }, {j = }, {s[start:] = }')
+			if qidx_1 == qidx_2: return char_idx
+
+			if qidx_2 == -1 or (qidx_1 < qidx_2 and qidx_1 != -1):
+				quote = "'"
+				qidx = qidx_1
+			else:
+				quote = '"'
+				qidx = qidx_2
+
+			qidx += 1
 			while 1:
-				j = s.find('"', j)
-				if j == -1: err('EOL while parsing string')
-				k = j - len(s[:j].rstrip('\\'))
-				# print(f'{i = }, {j = }, {k = }, {start = }, {s[start:] = }')
-				if not k&1: start = j+1; break
-				j += 1
+				qidx = s.find(quote, qidx)
+				if qidx == -1: err('EOL while parsing string')
+				nescapes = qidx - len(s[:qidx].rstrip('\\'))
+				# print(f'{char_idx = }, {qidx = }, {nescapes = }, {start = }, {s[start:] = }')
+				if not nescapes&1: start = qidx+1; break  # Even number of escapes. qidx closes the string. Update start and repeat
+				qidx += 1
 
 	@staticmethod
 	def rfind_through_strings(s, c, *, start=None):
 		while 1:
-			i = s.rfind(c, 0, start)
-			j = s.rfind('"', i, start)
-			if j == -1: return i
-			j -= 1
+			char_idx = s.rfind(c, 0, start)
+			qidx_1 = s.rfind("'", char_idx, start)
+			qidx_2 = s.rfind('"', char_idx, start)
+			if qidx_2 == qidx_1: return char_idx
+
+			if qidx_2 == -1 or (qidx_1 > qidx_2 and qidx_1 != -1):
+				quote = "'"
+				qidx = qidx_1
+			else:
+				quote = '"'
+				qidx = qidx_2
+
+			qidx -= 1
 			while 1:
-				j = s.rfind('"', 0, j)
-				l = len(s[:j].rstrip('\\'))
-				slashes = j - l
+				qidx = s.rfind(quote, 0, qidx)
+				l = len(s[:qidx].rstrip('\\'))
+				slashes = qidx - l
 				if not slashes&1: start = l; break
-				j -= 1
+				qidx -= 1
 
 	@staticmethod
 	def numeric(s):
@@ -522,7 +541,7 @@ class Type:
 					qual_name = f'{curr_type.name}.{name}'
 				else:
 					qual_name = name
-				
+
 				curr_type = Type(qual_name, module = self, args = curr_type.args + tuple(args))
 
 				type_stack.append(curr_type)
@@ -581,7 +600,11 @@ class Type:
 
 				if in_function: err('Local type definitions are not yet supported')
 
-				name, path_string = match[2].split(maxsplit=1)
+
+				import_split = match[2].split(maxsplit=1)
+				if len(import_split) != 2:
+					err('Invalid syntax for import. Expected `import <ident> "path"`')
+				name, path_string = import_split
 				# if args: err('Polymorphic types are not yet supported')
 
 				mod_path = parse_string(path_string)
@@ -740,7 +763,7 @@ class Type:
 					)
 
 					if isinstance(parse_type_result, ParseTypeError):
-						# print(f'In {T.strip()!r}, {parse_type_result}')
+						print(f'In {T.strip()!r}, {parse_type_result}')
 						...
 					else:
 						if len(parse_type_result) != 1:
@@ -995,7 +1018,7 @@ class Type:
 				evaluated_token = types[token]
 				for child in children:
 					if child not in evaluated_token.children:
-						err(f'{child!r} is not defined in {evaluated_token!r}')
+						err(f'{child!r} is not defined in {evaluated_token!r} (Attempting to match arg of {self} against pattern {type_str!r})')
 
 					evaluated_token = evaluated_token.children[child]
 
@@ -1415,11 +1438,16 @@ def parse_token(token: 'stripped', types, *, variables, expected_split=None, vir
 		if expected_split is not None:
 			curr_split = [c.size for c in clauses]
 			l = min(len(curr_split), len(expected_split))-1
-			if l > 0 and expected_split[:l] != curr_split[:l]:
+			output(f'; Comparing sizes {expected_split[:l]} vs {curr_split[:l]}')
+			if (
+			l >= 0 and expected_split[l] < curr_split[l]  # Data will be lost
+			or l > 0 and expected_split[:l] != curr_split[:l]
+			):
 				err(f'For {token!r}, cannot force size redistribution '
 					f'from {curr_split} into {expected_split}')
 
 		output('; Enum clauses:', clauses)
+		output('; Dest clauses:', expected_split)
 
 		return insts, clauses, Enum_type
 
